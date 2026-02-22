@@ -10,6 +10,12 @@ on:
     branches: [ "all-in-one-vs2022-wpo", "copilot/index-project-architecture" ]
   pull_request:
     branches: [ "all-in-one-vs2022-wpo", "copilot/index-project-architecture" ]
+  workflow_dispatch:
+    inputs:
+      build_config:
+        description: 'Build configuration (e.g. DX11)'
+        required: false
+        default: 'DX11'
 
 permissions: write-all
 
