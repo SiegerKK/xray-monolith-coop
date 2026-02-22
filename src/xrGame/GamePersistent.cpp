@@ -266,7 +266,8 @@ void CGamePersistent::UpdateGameType()
 	m_game_params.m_e_game_type = ParseStringToGameType(m_game_params.m_game_type);
 
 
-	if (m_game_params.m_e_game_type == eGameIDSingle)
+	if (m_game_params.m_e_game_type == eGameIDSingle ||
+	    m_game_params.m_e_game_type == eGameIDCoop)
 		g_current_keygroup = _sp;
 	else
 		g_current_keygroup = _mp;
@@ -528,7 +529,8 @@ void CGamePersistent::game_loaded()
 			g_pGameLevel->bReady &&
 			(allow_intro() && psDeviceFlags2.test(rsKeypress)) &&
 			load_screen_renderer.b_need_user_input &&
-			m_game_params.m_e_game_type == eGameIDSingle)
+			(m_game_params.m_e_game_type == eGameIDSingle ||
+			 m_game_params.m_e_game_type == eGameIDCoop))
 		{
 			VERIFY(NULL == m_intro);
 			m_intro = xr_new<CUISequencer>();
@@ -550,7 +552,8 @@ void CGamePersistent::game_loaded()
 
 		else if (	g_pGameLevel &&
 					g_pGameLevel->bReady &&
-					m_game_params.m_e_game_type == eGameIDSingle
+					(m_game_params.m_e_game_type == eGameIDSingle ||
+					 m_game_params.m_e_game_type == eGameIDCoop)
 				 )
 		{
 			Msg("intro_start game_loaded");

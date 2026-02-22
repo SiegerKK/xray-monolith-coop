@@ -57,14 +57,16 @@ CALifeSimulator::CALifeSimulator(xrServer* server, shared_str* command_line) :
 	R_ASSERT2(
 		xr_strlen(p.m_game_or_spawn) &&
 		!xr_strcmp(p.m_alife,"alife") &&
-		!xr_strcmp(p.m_game_type,"single"),
+		(!xr_strcmp(p.m_game_type,"single") || !xr_strcmp(p.m_game_type,"coop")),
 		"Invalid server options!"
 	);
 
 	string256 temp;
 	xr_strcpy(temp, p.m_game_or_spawn);
 	xr_strcat(temp, "/");
-	xr_strcat(temp, p.m_game_type);
+	// Coop uses the same save directory structure as single player
+	LPCSTR save_type = !xr_strcmp(p.m_game_type, "coop") ? "single" : p.m_game_type;
+	xr_strcat(temp, save_type);
 	xr_strcat(temp, "/");
 	xr_strcat(temp, p.m_alife);
 	*command_line = temp;

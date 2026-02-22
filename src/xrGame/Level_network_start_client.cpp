@@ -125,7 +125,8 @@ bool CLevel::net_start_client3()
 		// Load level
 		R_ASSERT2(Load(level_id), "Loading failed.");
 		map_data.m_level_geom_crc32 = 0;
-		if (!IsGameTypeSingle())
+		// Skip CRC32 for single and coop (ALife-based, no map sync needed)
+		if (!IsGameTypeSingle() && g_pGamePersistent->GameType() != eGameIDCoop)
 			CalculateLevelCrc32();
 	}
 	return true;

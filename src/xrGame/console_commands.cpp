@@ -1681,10 +1681,12 @@ struct CCC_CoopHost : public IConsole_Command
             Msg("[COOP] Log file: %s", log_path);
         }
 
-        // Build server options: level/coop  — same format as level/single
+        // Build server options: level/coop/alife/new
+        // - "alife" triggers CALifeSimulator in game_sv_Single::Create (inherited by game_sv_Coop)
+        // - "new"   means start a new game (not load a saved state)
         // psNET_direct_connect is set to TRUE for "/coop" in IPureServer::Connect
         string512 sv_opts;
-        xr_sprintf(sv_opts, "%s/coop", args);
+        xr_sprintf(sv_opts, "%s/coop/alife/new", args);
 
         // Client connects to the local server via localhost (direct loopback)
         const char* cl_opts = "localhost";

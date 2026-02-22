@@ -65,29 +65,24 @@ game_sv_Coop::~game_sv_Coop()
 
 void game_sv_Coop::Create(shared_str& options)
 {
+    // game_sv_Single::Create checks for "/alife" and creates CALifeSimulator if present.
+    // Our coop_host command always passes "/alife/new" so ALife is always initialized.
     inherited::Create(options);
 
-    // Инициализация состояния сессии
-    m_session.session_id        = (CoopSessionId)Device.TimerAsync();  // временный уникальный ID
+    // Инициализация состояния сессии (поверх single-player base)
+    m_session.session_id        = (CoopSessionId)Device.TimerAsync();
     m_session.protocol_version  = COOP_PROTOCOL_VERSION;
     m_session.content_hash      = COOP_CONTENT_HASH;
     m_session.max_players       = COOP_MAX_PLAYERS;
     m_session.current_players   = 0;
     m_session.is_joinable       = true;
 
-    // level_name из options если есть
-    if (strstr(*options, "/level/"))
-    {
-        const char* lvl = strstr(*options, "/level/") + 7;
-        const char* end = strpbrk(lvl, "/ \t\0");
-        size_t len = end ? (size_t)(end - lvl) : strlen(lvl);
-        if (len >= sizeof(m_session.level_name))
-            len = sizeof(m_session.level_name) - 1;
-        strncpy_s(m_session.level_name, sizeof(m_session.level_name), lvl, len);
-        m_session.level_name[len] = '\0';
-    }
+    // Имя уровня — первый компонент options (до первого '/')
+    shared_str lvl = parse_level_name(options);
+    strncpy_s(m_session.level_name, sizeof(m_session.level_name), *lvl, _TRUNCATE);
 
-    switch_Phase(GAME_PHASE_INPROGRESS);
+    // m_type was set to eGameIDSingle by game_sv_Single ctor — override to coop
+    m_type = eGameIDCoop;
 
     Msg("[COOP][SV] Host started | session_id=0x%08X protocol=%u content_hash=0x%08X max_players=%u level=%s",
         m_session.session_id, m_session.protocol_version,

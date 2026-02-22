@@ -5,7 +5,7 @@
 // Phase 1: минимальный каркас + handshake state machine.
 // ============================================================
 
-#include "game_sv_base.h"
+#include "game_sv_single.h"  // inherits ALife support
 #include "coop_net_types.h"
 #include "coop_packet_ids.h"
 
@@ -49,9 +49,9 @@ struct CoopSessionState
     }
 };
 
-class game_sv_Coop : public game_sv_GameState
+class game_sv_Coop : public game_sv_Single
 {
-    typedef game_sv_GameState inherited;
+    typedef game_sv_Single inherited;
 
     CoopSessionState             m_session;
     xr_vector<CoopPeerEntry>     m_peers;
@@ -95,10 +95,8 @@ public:
     // Sends REJECT + transport disconnect. Called on protocol violation/timeout.
     void disconnect_peer(ClientID id, ECoopRejectReason reason, const char* why);
 
-    // Pure virtual overrides required by game_sv_GameState
-    virtual BOOL OnTouch(u16 eid_who, u16 eid_target, BOOL bForced = FALSE) override { return TRUE; }
-    virtual void OnDetach(u16 eid_who, u16 eid_target) override {}
-    virtual BOOL CanHaveFriendlyFire() override { return FALSE; }
+    // Pure virtual overrides (inherited from game_sv_Single already)
+    // OnTouch, OnDetach, CanHaveFriendlyFire — all satisfied by game_sv_Single
 
     const CoopSessionState& session() const { return m_session; }
 };
