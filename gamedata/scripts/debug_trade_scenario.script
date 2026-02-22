@@ -323,6 +323,54 @@ ImGui.Groups.Unique.Widget(function()
     ImGui.EndChild()
 
     ImGui.TextDisabled("Открыть: F7 → F7 → Debug → NPC Trade Scenario")
+    ImGui.TextDisabled("Консоль: trade_test start | stop | status | log | help")
 
     ImGui.End()
 end)
+
+-- ─── Консольные команды ───────────────────────────────────────────────────────
+--
+-- trade_test start   — запустить сценарий
+-- trade_test stop    — остановить и убрать НПЦ
+-- trade_test status  — вывести текущее состояние в консоль
+-- trade_test log     — дамп лога сценария в консоль
+-- trade_test help    — справка
+--
+local function on_console(cmd, arg1)
+    if cmd ~= "trade_test" then return end
+    local sub = (arg1 or "help"):lower()
+
+    if sub == "start" then
+        start_scenario()
+    elseif sub == "stop" then
+        stop_scenario()
+    elseif sub == "status" then
+        Msg("trade_test: running=%s setup_at=%s seller=%s buyer=%s",
+            tostring(scenario.running),
+            tostring(scenario.setup_at),
+            tostring(scenario.seller_id),
+            tostring(scenario.buyer_id))
+        for sid, s in pairs(npc_trade_negotiation.get_sessions()) do
+            -- buyer_si/seller_si — индекс текущего состояния (state index) в BUYER_STATES/SELLER_STATES
+            Msg("  session[%s]: buyer=%s seller=%s done=%s buyer_state_idx=%s seller_state_idx=%s",
+                tostring(sid), tostring(s.buyer_id), tostring(s.seller_id),
+                tostring(s.done),
+                tostring(s.buyer_si), tostring(s.seller_si))
+        end
+    elseif sub == "log" then
+        Msg("=== trade_test log (%d lines) ===", #scenario.log)
+        for _, line in ipairs(scenario.log) do Msg(line) end
+        Msg("=== end trade_test log ===")
+    elseif sub == "help" then
+        Msg("trade_test <sub>:")
+        Msg("  start  — заспавнить 2 сталкеров и начать переговоры")
+        Msg("  stop   — остановить и убрать сталкеров")
+        Msg("  status — текущее состояние FSM")
+        Msg("  log    — дамп лога в консоль/log.txt")
+        Msg("  help   — эта справка")
+    else
+        Msg("trade_test: неизвестная команда '%s'. Введите 'trade_test help'.", sub)
+    end
+end
+
+RegisterScriptCallback("on_console_execute", on_console)

@@ -167,3 +167,66 @@ function npc_trade_config.reload()
     warned = {}
     Msg("[npc_trade_config] cache cleared — will reload on next access")
 end
+
+-- ─── Консольные команды ───────────────────────────────────────────────────────
+--
+-- trade_cfg list              — вывести все параметры
+-- trade_cfg get <key>         — вывести значение одного параметра
+-- trade_cfg reload            — сбросить кеш (hot-reload после правки ltx)
+-- trade_cfg help              — справка
+--
+-- Изменение значений во время игры невозможно через ini_sys:
+--   отредактируйте mod_npc_trade.ltx, затем введите trade_cfg reload.
+--
+local CORE_KEYS  = {
+    "suitable_buyer", "suitable_seller", "min_weapons_to_sell",
+    "weapon_price", "accept_chance", "negotiation_step_ms",
+    "approach_timeout_steps", "close_enough_m",
+}
+local DEBUG_KEYS = { "stalker_section", "weapon_section", "buyer_money", "setup_delay_ms" }
+
+local function on_console(cmd, arg1, arg2)
+    if cmd ~= "trade_cfg" then return end
+    local sub = (arg1 or "help"):lower()
+
+    if sub == "list" then
+        Msg("=== [npc_trade] (core) ===")
+        for _, k in ipairs(CORE_KEYS) do
+            local ok, v = pcall(npc_trade_config.get, k)
+            Msg("  %-30s = %s", k, ok and tostring(v) or ("ERROR: "..tostring(v)))
+        end
+        Msg("=== [npc_trade_debug] ===")
+        for _, k in ipairs(DEBUG_KEYS) do
+            local ok, v = pcall(npc_trade_config.get_debug, k)
+            Msg("  %-30s = %s", k, ok and tostring(v) or ("ERROR: "..tostring(v)))
+        end
+
+    elseif sub == "get" then
+        local key = arg2
+        if not key then Msg("trade_cfg get: нужно указать ключ") return end
+        -- try core first, then debug
+        local ok, v = pcall(npc_trade_config.get, key)
+        if not ok then ok, v = pcall(npc_trade_config.get_debug, key) end
+        if ok then
+            Msg("trade_cfg: %s = %s", key, tostring(v))
+        else
+            Msg("trade_cfg: ключ '%s' не найден ни в core, ни в debug", key)
+        end
+
+    elseif sub == "reload" then
+        npc_trade_config.reload()
+        Msg("trade_cfg: конфиг перезагружен из mod_npc_trade.ltx")
+
+    elseif sub == "help" then
+        Msg("trade_cfg <sub> [args]:")
+        Msg("  list            — все параметры обоих разделов")
+        Msg("  get <key>       — значение одного ключа")
+        Msg("  reload          — сбросить кеш (после правки mod_npc_trade.ltx)")
+        Msg("  help            — эта справка")
+        Msg("Изменение: отредактируй mod_npc_trade.ltx, затем trade_cfg reload")
+    else
+        Msg("trade_cfg: неизвестная команда '%s'. Введите 'trade_cfg help'.", sub)
+    end
+end
+
+RegisterScriptCallback("on_console_execute", on_console)
