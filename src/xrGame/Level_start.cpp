@@ -163,6 +163,8 @@ bool CLevel::net_start2()
 		}
 		Server->SLS_Default();
 		map_data.m_name = Server->level_name(m_caServerOptions);
+		Msg("[NET] Server started | level='%s' port=%d psNET_direct_connect=%d",
+		    *map_data.m_name, Server->GetPort(), (int)psNET_direct_connect);
 		if (!g_dedicated_server)
 			g_pGamePersistent->LoadTitle(true, map_data.m_name);
 	}

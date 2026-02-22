@@ -1691,7 +1691,8 @@ struct CCC_CoopHost : public IConsole_Command
         // Client connects to the local server via localhost (direct loopback)
         const char* cl_opts = "localhost";
 
-        Msg("[COOP] Hosting level: '%s' | sv_opts='%s'", args, sv_opts);
+        Msg("[COOP] Hosting level: '%s' | sv_opts='%s' | server will listen on TCP port 1235", args, sv_opts);
+        Msg("[COOP] Clients can join with: coop_connect <your_ip>");
         Engine.Event.Defer("KERNEL:start",
             size_t(xr_strdup(sv_opts)),
             size_t(xr_strdup(cl_opts)));
@@ -1708,7 +1709,8 @@ struct CCC_CoopConnect : public IConsole_Command
     {
         if (!args || !args[0])
         {
-            Msg("! [COOP] Usage: coop_connect <ip>[:<port>]");
+            Msg("! [COOP] Usage: coop_connect <ip_or_hostname>[/port=<port>]");
+            Msg("! [COOP] Default server port: 1235  (e.g. coop_connect 192.168.1.10)");
             return;
         }
 
@@ -1719,10 +1721,11 @@ struct CCC_CoopConnect : public IConsole_Command
         }
 
         // Client-only connect: no local server, connect to remote host
+        // Default server port is 1235 (START_PORT_LAN_SV). Can override with /port=XXXX in args.
         string512 cl_opts;
         xr_sprintf(cl_opts, "%s", args);
 
-        Msg("[COOP] Connecting to: %s", args);
+        Msg("[COOP] Connecting to: %s (default port 1235 if not specified)", args);
         Engine.Event.Defer("KERNEL:start",
             size_t(0),  // no local server
             size_t(xr_strdup(cl_opts)));

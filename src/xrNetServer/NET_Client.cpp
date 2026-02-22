@@ -532,6 +532,7 @@ BOOL IPureClient::Connect(LPCSTR options)
 		}
 		if (stricmp(server_name, "localhost") == 0)
 		{
+			Msg("- IPureClient: direct (localhost) connect to port %d", psSV_Port);
 			WCHAR SessionPasswordUNICODE[4096];
 			if (xr_strlen(password_str))
 			{
@@ -616,6 +617,7 @@ BOOL IPureClient::Connect(LPCSTR options)
 		}
 		else
 		{
+			Msg("- IPureClient: EnumHosts connect to server=%s sv_port=%d", server_name, psSV_Port);
 			string64 EnumData;
 			EnumData[0] = 0;
 			xr_strcat(EnumData, "ToConnect");
@@ -641,7 +643,7 @@ BOOL IPureClient::Connect(LPCSTR options)
 				);
 				if (res != S_OK)
 				{
-					//			xr_string res = Debug.error2string(HostSuccess);
+					Msg("! EnumHosts failed: server=%s sv_port=%d cl_port=%d HRESULT=0x%08X", server_name, psSV_Port, c_port, (unsigned)res);
 					switch (res)
 					{
 					case DPNERR_INVALIDHOSTADDRESS:

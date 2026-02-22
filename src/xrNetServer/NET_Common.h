@@ -8,6 +8,7 @@ struct GameDescriptionData
 	string128 map_name;
 	string128 map_version;
 	string512 download_url;
+	string64  game_type;   // e.g. "single", "coop", "deathmatch" — sent by server so remote clients can configure themselves
 };
 
 /**/

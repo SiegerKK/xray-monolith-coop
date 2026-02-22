@@ -64,7 +64,9 @@ bool CLevel::net_start_client2()
 		}
 	}
 
+	Msg("[NET] Connecting to: %s", *m_caClientOptions);
 	connected_to_server = Connect2Server(*m_caClientOptions);
+	Msg("[NET] Connect2Server: %s", connected_to_server ? "OK" : "FAILED");
 
 	return true;
 }
@@ -91,11 +93,23 @@ bool CLevel::net_start_client3()
 			level_name = name().c_str(); //Server->level_name		(server_options).c_str();
 			level_ver = Server->level_version(server_options).c_str(); //1.0
 		}
-		else //multiplayer
+		else //multiplayer + TCP/IP coop
 		{
 			level_name = get_net_DescriptionData().map_name;
 			level_ver = get_net_DescriptionData().map_version;
 			download_url = get_net_DescriptionData().download_url;
+
+			// For TCP/IP coop: server announces game type in GameDescriptionData so the remote
+			// client (which had no server options string) can configure m_game_type correctly.
+			// This must happen BEFORE Load() so IsGameTypeSingle() returns the right value.
+			const char* sv_gt = get_net_DescriptionData().game_type;
+			if (sv_gt && sv_gt[0] && !IsGameTypeSingle())
+			{
+				Msg("[NET] Game type from server: '%s' (was: '%s')",
+				    sv_gt, g_pGamePersistent->m_game_params.m_game_type);
+				xr_strcpy(g_pGamePersistent->m_game_params.m_game_type, sv_gt);
+				g_pGamePersistent->UpdateGameType();
+			}
 			rescan_mp_archives(); //because if we are using psNET_direct_connect, we not download map...
 		}
 		// Determine internal level-ID

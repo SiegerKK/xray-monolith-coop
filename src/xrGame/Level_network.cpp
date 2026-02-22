@@ -351,6 +351,8 @@ bool CLevel::Connect2Server(const char* options)
 	m_bConnectResultReceived = false;
 	m_bConnectResult = true;
 
+	Msg("[NET] Connect2Server | options='%s' psNET_direct_connect=%d", options, (int)psNET_direct_connect);
+
 	if (!psNET_direct_connect)
 	{
 		xr_auth_strings_t tmp_ignore;
