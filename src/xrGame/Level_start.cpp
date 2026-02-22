@@ -269,12 +269,18 @@ bool CLevel::net_start6()
 	{
 		Msg("! Failed to start client. Check the connection or level existance.");
 
+		// TODO_COOP: coop uses xrServer (no GameSpy) — never call SwitchToMultiplayerMenu()
+		//           which dispatches event 2 and calls OnButton_multiplayer_clicked in
+		//           Anomaly's modified menu Lua script where that method doesn't exist.
+		bool is_coop = (g_pGamePersistent->GameType() == eGameIDCoop);
+
 		if (m_connect_server_err == xrServer::ErrConnect && !psNET_direct_connect && !g_dedicated_server)
 		{
 			DEL_INSTANCE(g_pGameLevel);
 			Console->Execute("main_menu on");
 
-			MainMenu()->SwitchToMultiplayerMenu();
+			if (!is_coop)
+				MainMenu()->SwitchToMultiplayerMenu();
 		}
 		else if (!map_data.m_map_loaded && map_data.m_name.size() && m_bConnectResult)
 			//if (map_data.m_name == "") - level not loaded, see CLevel::net_start_client3
@@ -292,7 +298,7 @@ bool CLevel::net_start6()
 			DEL_INSTANCE(g_pGameLevel);
 			Console->Execute("main_menu on");
 
-			if (!g_dedicated_server)
+			if (!g_dedicated_server && !is_coop)
 			{
 				MainMenu()->SwitchToMultiplayerMenu();
 				MainMenu()->Show_DownloadMPMap(dialog_string, download_url);
@@ -313,7 +319,7 @@ bool CLevel::net_start6()
 			g_pGameLevel->net_Stop();
 			DEL_INSTANCE(g_pGameLevel);
 			Console->Execute("main_menu on");
-			if (!g_dedicated_server)
+			if (!g_dedicated_server && !is_coop)
 			{
 				MainMenu()->SwitchToMultiplayerMenu();
 				MainMenu()->Show_DownloadMPMap(dialog_string, download_url);

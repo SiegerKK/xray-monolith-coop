@@ -230,6 +230,8 @@ LPCSTR GameTypeToString(EGameIDs gt, bool bShort)
 	case eGameIDTeamDominationZone:
 		return (bShort) ? "tdz" : "teamdominationzone";
 		break;
+	case eGameIDCoop:
+		return "coop";
 	default:
 		return "---";
 	}

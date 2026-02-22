@@ -831,6 +831,11 @@ void game_sv_GameState::OnEvent(NET_Packet& tNetPacket, u16 type, u32 time, Clie
 			if (g_dedicated_server && (CL == m_server->GetServerClient()))
 				break;
 
+			// TODO_COOP: coop uses plain xrServer (not xrGameSpyServer), so GameSpy
+			//            CDKey / player-state validation is not applicable.
+			if (Type() == eGameIDCoop)
+				break;
+
 			CheckNewPlayer(CL);
 		}
 		break;
