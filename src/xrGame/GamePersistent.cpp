@@ -251,6 +251,8 @@ EGameIDs ParseStringToGameType(LPCSTR str)
 		return eGameIDDominationZone;
 	else if (!xr_strcmp(str, "teamdominationzone"))
 		return eGameIDTeamDominationZone;
+	else if (!xr_strcmp(str, "coop"))   // TODO_COOP Phase 1
+		return eGameIDCoop;
 	else
 		return eGameIDNoGame; //EGameIDs
 }

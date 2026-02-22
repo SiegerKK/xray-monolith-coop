@@ -264,6 +264,10 @@ CLASS_ID game_GameState::getCLASS_ID(LPCSTR game_type_name, bool isServer)
 		return (isServer) ? TEXT2CLSID("SV_CTA") : TEXT2CLSID("CL_CTA");
 		break;
 
+	case eGameIDCoop:   // TODO_COOP Phase 1
+		return (isServer) ? TEXT2CLSID("SV_COOP") : TEXT2CLSID("CL_COOP");
+		break;
+
 	default:
 		return (TEXT2CLSID(""));
 		break;

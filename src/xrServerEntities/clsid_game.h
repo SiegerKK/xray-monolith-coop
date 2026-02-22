@@ -231,3 +231,7 @@
 
 // demonized: Custom classes
 #define CLSID_OBJECT_W_SSRS			MK_CLSID('_','W','_','S','S','R','S',' ')
+
+// TODO_COOP: Coop game mode classes (Phase 1)
+#define CLSID_SV_GAME_COOP          MK_CLSID('S','V','_','C','O','O','P',' ')
+#define CLSID_CL_GAME_COOP          MK_CLSID('C','L','_','C','O','O','P',' ')

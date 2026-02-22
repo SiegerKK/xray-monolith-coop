@@ -161,12 +161,14 @@
 #	include "game_sv_teamdeathmatch.h"
 #	include "game_sv_ArtefactHunt.h"
 #	include "game_sv_capture_the_artefact.h"
+#	include "game_sv_coop.h"   // TODO_COOP Phase 1
 
 #	include "game_cl_single.h"
 #	include "game_cl_deathmatch.h"
 #	include "game_cl_teamdeathmatch.h"
 #	include "game_cl_ArtefactHunt.h"
 #	include	"game_cl_capture_the_artefact.h"
+#	include "game_cl_coop.h"   // TODO_COOP Phase 1
 
 #	include "UIGameSP.h"
 #	include "UIGameAHunt.h"
@@ -213,6 +215,7 @@ void CObjectFactory::register_classes()
 	add<game_sv_ArtefactHunt>(CLSID_SV_GAME_ARTEFACTHUNT, "game_sv_artefact_hunt");
 	add<game_sv_CaptureTheArtefact>(CLSID_SV_GAME_CAPTURETHEARTEFACT, "game_sv_capture_the_artefact");
 #endif	//	BENCHMARK_BUILD
+	add<game_sv_Coop>(CLSID_SV_GAME_COOP, "game_sv_coop");   // TODO_COOP Phase 1
 	//Client Game type
 #ifndef NO_SINGLE
 	add<game_cl_Single>(CLSID_CL_GAME_SINGLE, "game_cl_single");
@@ -223,6 +226,7 @@ void CObjectFactory::register_classes()
 	add<game_cl_ArtefactHunt>(CLSID_CL_GAME_ARTEFACTHUNT, "game_cl_artefact_hunt");
 	add<game_cl_CaptureTheArtefact>(CLSID_CL_GAME_CAPTURETHEARTEFACT, "game_cl_capture_the_artefact");
 #endif	//	BENCHMARK_BUILD
+	add<game_cl_Coop>(CLSID_CL_GAME_COOP, "game_cl_coop");   // TODO_COOP Phase 1
 
 
 	add<CUIGameSP>(CLSID_GAME_UI_SINGLE, "game_ui_single");

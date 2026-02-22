@@ -1136,6 +1136,8 @@
     <ClInclude Include="game_base.h" />
     <ClInclude Include="game_base_kill_type.h" />
     <ClInclude Include="game_base_menu_events.h" />
+    <ClInclude Include="coop_net_types.h" />
+    <ClInclude Include="coop_packet_ids.h" />
     <ClInclude Include="game_cl_artefacthunt.h" />
     <ClInclude Include="game_cl_artefacthunt_snd_msg.h" />
     <ClInclude Include="game_cl_base.h" />
@@ -1149,6 +1151,7 @@
     <ClInclude Include="game_cl_mp_messages_menu.h" />
     <ClInclude Include="game_cl_mp_snd_messages.h" />
     <ClInclude Include="game_cl_single.h" />
+    <ClInclude Include="game_cl_coop.h" />
     <ClInclude Include="game_cl_teamdeathmatch.h" />
     <ClInclude Include="game_cl_teamdeathmatch_snd_messages.h" />
     <ClInclude Include="game_events_handler.h" />
@@ -1174,6 +1177,7 @@
     <ClInclude Include="game_sv_mp_team.h" />
     <ClInclude Include="game_sv_mp_vote_flags.h" />
     <ClInclude Include="game_sv_single.h" />
+    <ClInclude Include="game_sv_coop.h" />
     <ClInclude Include="game_sv_teamdeathmatch.h" />
     <ClInclude Include="GlobalFeelTouch.hpp" />
     <CustomBuild Include="graph_abstract.h" />
@@ -2881,6 +2885,7 @@
       <PrecompiledHeaderFile>pch_script.h</PrecompiledHeaderFile>
       <PrecompiledHeaderOutputFile>$(IntDir)$(ProjectName)_script.pch</PrecompiledHeaderOutputFile>
     </ClCompile>
+    <ClCompile Include="game_cl_coop.cpp" />
     <ClCompile Include="game_cl_teamdeathmatch.cpp" />
     <ClCompile Include="game_graph_script.cpp">
       <PrecompiledHeaderFile>pch_script.h</PrecompiledHeaderFile>
@@ -2903,6 +2908,7 @@
     <ClCompile Include="game_sv_item_respawner.cpp" />
     <ClCompile Include="game_sv_mp.cpp" />
     <ClCompile Include="game_sv_single.cpp" />
+    <ClCompile Include="game_sv_coop.cpp" />
     <ClCompile Include="game_sv_teamdeathmatch.cpp" />
     <ClCompile Include="game_sv_teamdeathmatch_process_event.cpp" />
     <ClCompile Include="GlobalFeelTouch.cpp" />
