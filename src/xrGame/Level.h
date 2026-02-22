@@ -436,6 +436,6 @@ IC CPHCommander& CLevel::ph_commander_physics_worldstep()
 
 IC bool OnServer() { return Level().IsServer(); }
 IC bool OnClient() { return Level().IsClient(); }
-IC bool IsGameTypeSingle() { return (g_pGamePersistent->GameType() == eGameIDSingle); }
+IC bool IsGameTypeSingle() { EGameIDs gid = g_pGamePersistent->GameType(); return (gid == eGameIDSingle || gid == eGameIDCoop); }
 
 extern bool g_bDebugEvents;

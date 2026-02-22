@@ -5,13 +5,13 @@
 // Phase 1: минимальный каркас + handshake state machine.
 // ============================================================
 
-#include "game_cl_base.h"
+#include "game_cl_single.h"
 #include "coop_net_types.h"
 #include "coop_packet_ids.h"
 
-class game_cl_Coop : public game_cl_GameState
+class game_cl_Coop : public game_cl_Single
 {
-    typedef game_cl_GameState inherited;
+    typedef game_cl_Single inherited;
 
     ECoopClientState   m_state;
     u32                m_state_time_ms;
