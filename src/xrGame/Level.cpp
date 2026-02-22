@@ -1772,7 +1772,11 @@ void CLevel::OnSessionTerminate(LPCSTR reason)
 
 u32 GameID()
 {
-	return Game().Type();
+	u32 type = Game().Type();
+	// Treat coop as single-player for all legacy GameID() guards —
+	// coop-specific code uses game->Type() / g_pGamePersistent->GameType() directly.
+	if (type == eGameIDCoop) type = eGameIDSingle;
+	return type;
 }
 
 CZoneList* CLevel::create_hud_zones_list()
