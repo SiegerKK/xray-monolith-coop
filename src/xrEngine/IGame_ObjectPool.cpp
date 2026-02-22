@@ -23,6 +23,11 @@ void IGame_ObjectPool::prefetch()
 	string256 section;
 	// prefetch objects
 	strconcat(sizeof(section), section, "prefetch_objects_", g_pGamePersistent->m_game_params.m_game_type);
+	if (!pSettings->section_exist(section))
+	{
+		::Render->model_Logging(TRUE);
+		return;
+	}
 	CInifile::Sect const& sect = pSettings->r_section(section);
 	for (CInifile::SectCIt I = sect.Data.begin(); I != sect.Data.end(); I++)
 	{

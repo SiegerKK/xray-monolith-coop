@@ -929,7 +929,7 @@ void xrServer::Server_Client_Check(IClient* CL)
 
 bool xrServer::OnCL_QueryHost()
 {
-	if (game->Type() == eGameIDSingle) return false;
+	if (game->Type() == eGameIDSingle || game->Type() == eGameIDCoop) return false;
 	return (GetClientsCount() != 0);
 };
 
