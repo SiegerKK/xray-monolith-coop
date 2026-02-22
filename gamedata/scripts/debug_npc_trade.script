@@ -1,0 +1,220 @@
+-------------------------------------------------------------------------------
+-- NPC Trade — Debug Panel
+-- ImGui-панель для тестирования механики npc_trade
+-------------------------------------------------------------------------------
+--
+-- Регистрируется в меню Debug (открывается через F7 → ImGui overlay → Debug).
+-- Позволяет в реальном времени:
+--   • выбрать двух НПЦ по ID
+--   • посмотреть их инвентари и баланс
+--   • передать предмет от одного к другому с указанием цены
+--   • запустить demo_trade (авто-сделка первым предметом)
+--   • видеть лог последних операций
+--
+-- Зависимости: _imgui_groups.script, npc_trade.script
+-------------------------------------------------------------------------------
+
+local M = this
+
+-- ─── Состояние панели ────────────────────────────────────────────────────────
+
+local state = {
+    -- ID объектов (вводятся пользователем)
+    seller_id_buf  = "0",
+    buyer_id_buf   = "0",
+    price_buf      = "100",
+    -- Кэш инвентарей (обновляется по кнопке Refresh)
+    seller_items   = {},
+    buyer_items    = {},
+    -- Выбранный предмет в списке инвентаря продавца
+    selected_item  = nil,
+    -- Лог операций (последние N строк)
+    log            = {},
+    log_max        = 12,
+}
+
+-- ─── Внутренние функции ──────────────────────────────────────────────────────
+
+local function log_msg(msg)
+    table.insert(state.log, strformat("[%s] %s", tostring(os.date and os.date("%H:%M:%S") or "?"), msg))
+    if #state.log > state.log_max then
+        table.remove(state.log, 1)
+    end
+end
+
+local function parse_id(buf)
+    return tonumber(buf) or 0
+end
+
+local function refresh_inventories()
+    local sid = parse_id(state.seller_id_buf)
+    local bid = parse_id(state.buyer_id_buf)
+
+    state.seller_items = (sid > 0) and npc_trade.list_inventory(sid) or {}
+    state.buyer_items  = (bid > 0) and npc_trade.list_inventory(bid) or {}
+    state.selected_item = nil
+
+    log_msg(strformat(
+        "Refreshed: seller %d (%d items, %d rub) | buyer %d (%d items, %d rub)",
+        sid, #state.seller_items, npc_trade.get_balance(sid),
+        bid, #state.buyer_items,  npc_trade.get_balance(bid)
+    ))
+end
+
+local function do_sell_selected()
+    if not state.selected_item then
+        log_msg("No item selected")
+        return
+    end
+    local sid   = parse_id(state.seller_id_buf)
+    local bid   = parse_id(state.buyer_id_buf)
+    local price = tonumber(state.price_buf) or 0
+
+    local ok, msg = npc_trade.sell_item(sid, bid, state.selected_item.id, price)
+    log_msg((ok and "[OK] " or "[FAIL] ") .. msg)
+
+    if ok then
+        refresh_inventories()
+    end
+end
+
+local function do_demo_trade()
+    local sid   = parse_id(state.seller_id_buf)
+    local bid   = parse_id(state.buyer_id_buf)
+    local price = tonumber(state.price_buf) or 100
+
+    local ok, msg = npc_trade.demo_trade(sid, bid, price)
+    log_msg((ok and "[OK] " or "[FAIL] ") .. msg)
+
+    if ok then
+        refresh_inventories()
+    end
+end
+
+-- ─── ImGui рендер панели ─────────────────────────────────────────────────────
+
+local function render_panel()
+    -- Заголовок окна
+    local opened, visible = ImGui.Begin("NPC Trade Debug", true,
+        bit.bor(ImGui.WindowFlags_NoCollapse))
+
+    if not opened then
+        ImGui.End()
+        return
+    end
+
+    -- ── Ввод ID объектов ──
+    ImGui.Text("Seller ID")
+    ImGui.SameLine()
+    ImGui.SetNextItemWidth(80)
+    local changed_s, new_s = ImGui.InputText("##seller_id", state.seller_id_buf, 12)
+    if changed_s then state.seller_id_buf = new_s end
+
+    ImGui.SameLine()
+    ImGui.Text("Buyer ID")
+    ImGui.SameLine()
+    ImGui.SetNextItemWidth(80)
+    local changed_b, new_b = ImGui.InputText("##buyer_id", state.buyer_id_buf, 12)
+    if changed_b then state.buyer_id_buf = new_b end
+
+    ImGui.SameLine()
+    ImGui.Text("Price")
+    ImGui.SameLine()
+    ImGui.SetNextItemWidth(70)
+    local changed_p, new_p = ImGui.InputText("##price", state.price_buf, 10)
+    if changed_p then state.price_buf = new_p end
+
+    ImGui.SameLine()
+    if ImGui.Button("Refresh") then
+        refresh_inventories()
+    end
+
+    ImGui.Separator()
+
+    -- ── Балансы ──
+    local sid = parse_id(state.seller_id_buf)
+    local bid = parse_id(state.buyer_id_buf)
+    ImGui.TextColored(ImVec4 and ImVec4(0.4, 1, 0.4, 1) or nil,
+        strformat("Seller balance: %d rub  |  Buyer balance: %d rub",
+            npc_trade.get_balance(sid),
+            npc_trade.get_balance(bid)
+        )
+    )
+
+    ImGui.Separator()
+
+    -- ── Инвентарь продавца ──
+    ImGui.Text(strformat("Seller inventory (%d items):", #state.seller_items))
+    if ImGui.BeginChild("##seller_inv", 0, 120, true) then
+        for i, item in ipairs(state.seller_items) do
+            local label = strformat("[%d] %s  (id=%d)", i, item.section, item.id)
+            local is_selected = (state.selected_item and
+                                 state.selected_item.id == item.id)
+            if ImGui.Selectable(label, is_selected) then
+                state.selected_item = item
+            end
+        end
+    end
+    ImGui.EndChild()
+
+    if state.selected_item then
+        ImGui.TextColored(ImVec4 and ImVec4(1, 1, 0.4, 1) or nil,
+            strformat("Selected: %s (id=%d)", state.selected_item.section,
+                      state.selected_item.id))
+    else
+        ImGui.TextDisabled("(no item selected)")
+    end
+
+    ImGui.Separator()
+
+    -- ── Кнопки действий ──
+    if ImGui.Button("Sell Selected Item") then
+        do_sell_selected()
+    end
+    ImGui.SameLine()
+    if ImGui.Button("Demo Trade (first item)") then
+        do_demo_trade()
+    end
+
+    ImGui.Separator()
+
+    -- ── Лог ──
+    ImGui.Text("Log:")
+    if ImGui.BeginChild("##trade_log", 0, 110, true) then
+        for _, line in ipairs(state.log) do
+            ImGui.TextUnformatted(line)
+        end
+        -- Автопрокрутка вниз
+        if ImGui.GetScrollY() >= ImGui.GetScrollMaxY() - 10 then
+            ImGui.SetScrollHereY(1.0)
+        end
+    end
+    ImGui.EndChild()
+
+    if ImGui.Button("Clear Log") then
+        state.log = {}
+    end
+    ImGui.SameLine()
+    ImGui.TextDisabled("Tip: open with F7 -> Debug -> NPC Trade")
+
+    ImGui.End()
+end
+
+-- ─── Регистрация в ImGui.Groups.Debug ────────────────────────────────────────
+
+local show_window = false
+
+-- Флаг открытия панели управляется из меню Debug
+ImGui.Groups.Debug.Widget(function()
+    local clicked, new_val = ImGui.MenuItem("NPC Trade", nil, show_window)
+    if clicked then
+        show_window = new_val
+    end
+end)
+
+-- Сам рендер окна живёт в группе Unique (рисуется каждый кадр независимо
+-- от видимости ImGui overlay, пока show_window == true)
+ImGui.Groups.Unique.Widget(function()
+    if not show_window then return end
+    render_panel()
+end)

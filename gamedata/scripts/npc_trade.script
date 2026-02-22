@@ -1,0 +1,161 @@
+-------------------------------------------------------------------------------
+-- NPC Trade
+-- Механика торговли между двумя НПЦ
+-------------------------------------------------------------------------------
+--
+-- Предоставляет функции для обмена предметами и деньгами между двумя
+-- онлайн-объектами (НПЦ или актором). Оба участника сделки должны находиться
+-- в зоне загрузки от актора (online zone): движковые API transfer_item и
+-- transfer_money работают только с game_object, недоступными в оффлайне.
+--
+-- Основные функции:
+--   npc_trade.sell_item(seller_id, buyer_id, item_id, price)
+--   npc_trade.list_inventory(npc_id)     → table { section, id }
+--   npc_trade.get_balance(npc_id)        → number (деньги)
+--   npc_trade.demo_trade(npc_a_id, npc_b_id, price)
+--
+-- Зависимости: стандартные Lua-биндинги движка (game_object, level, alife)
+-------------------------------------------------------------------------------
+
+npc_trade = {}
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- Внутренние помощники
+-- ────────────────────────────────────────────────────────────────────────────
+
+--- Получить game_object по server-entity ID. Работает только для объектов
+--- в онлайн-зоне (load distance от актора).
+---@param id number  ID объекта в мире
+---@return game_object|nil
+local function get_online_object(id)
+    return level and level.object_by_id(id) or nil
+end
+
+--- Получить server-entity по ID (работает всегда, даже в оффлайне).
+--- Зарезервировано для будущих механик, работающих с оффлайн-объектами.
+---@param id number
+---@return cse_abstract|nil
+local function get_se_object(id)
+    return alife and alife():object(id) or nil
+end
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- Публичный API
+-- ────────────────────────────────────────────────────────────────────────────
+
+--- Вернуть текущий баланс (деньги) НПЦ или актора по его ID.
+---@param npc_id number
+---@return number деньги (0 если объект не найден / оффлайн)
+function npc_trade.get_balance(npc_id)
+    local obj = get_online_object(npc_id)
+    if obj then
+        return obj:money() or 0
+    end
+    -- В оффлайне деньги хранит server-entity через m_dwMoney, но прямого
+    -- Lua-доступа к нему нет без дополнительных биндингов.
+    return 0
+end
+
+--- Список предметов в инвентаре онлайн-объекта.
+---@param npc_id number
+---@return table[]  массив { section=string, id=number }
+function npc_trade.list_inventory(npc_id)
+    local result = {}
+    local obj = get_online_object(npc_id)
+    if not obj then return result end
+
+    obj:iterate_inventory(function(owner, item)
+        if item then
+            table.insert(result, {
+                section = item:section(),
+                id      = item:id(),
+                name    = item:section(),  -- human-readable fallback
+            })
+        end
+    end, obj)
+
+    return result
+end
+
+--- Передать один предмет от продавца покупателю за указанную цену.
+--- Оба объекта должны быть в онлайн-зоне (видимы актором).
+---@param seller_id  number  ID продавца (НПЦ или актор)
+---@param buyer_id   number  ID покупателя
+---@param item_id    number  ID конкретного предмета в инвентаре продавца
+---@param price      number  сумма в рублях (0 = бесплатно)
+---@return boolean, string  успех и сообщение
+function npc_trade.sell_item(seller_id, buyer_id, item_id, price)
+    price = price or 0
+
+    local seller = get_online_object(seller_id)
+    local buyer  = get_online_object(buyer_id)
+    local item   = level and level.object_by_id(item_id) or nil
+
+    if not seller then
+        return false, strformat("seller id=%d not online", seller_id)
+    end
+    if not buyer then
+        return false, strformat("buyer id=%d not online", buyer_id)
+    end
+    if not item then
+        return false, strformat("item id=%d not found", item_id)
+    end
+
+    -- Проверяем, что предмет действительно в инвентаре продавца
+    local found = false
+    seller:iterate_inventory(function(owner, inv_item)
+        if inv_item and inv_item:id() == item_id then
+            found = true
+        end
+    end, seller)
+
+    if not found then
+        return false, strformat("item %d not in seller inventory", item_id)
+    end
+
+    -- Проверяем деньги покупателя
+    if price > 0 and buyer:money() < price then
+        return false, strformat(
+            "buyer has %d rub, needs %d", buyer:money(), price)
+    end
+
+    -- Деньги: покупатель → продавец
+    if price > 0 then
+        buyer:transfer_money(price, seller)
+    end
+
+    -- Предмет: продавец → покупатель
+    seller:transfer_item(item, buyer)
+
+    return true, strformat(
+        "transferred %s (id=%d) from %d to %d for %d rub",
+        item:section(), item_id, seller_id, buyer_id, price)
+end
+
+--- Простейшая автоматическая «сделка»: НПЦ A продаёт НПЦ B первый доступный
+--- предмет из своего инвентаря за фиксированную сумму.
+--- Используется для тестирования механики.
+---@param npc_a_id number  продавец
+---@param npc_b_id number  покупатель
+---@param price    number  цена (по умолчанию 100)
+---@return boolean, string
+function npc_trade.demo_trade(npc_a_id, npc_b_id, price)
+    price = price or 100
+
+    local items = npc_trade.list_inventory(npc_a_id)
+    if #items == 0 then
+        return false, strformat("npc %d has no items in inventory", npc_a_id)
+    end
+
+    -- Берём первый предмет
+    local first_item = items[1]
+    return npc_trade.sell_item(npc_a_id, npc_b_id, first_item.id, price)
+end
+
+--- Callback-регистрация (вызывается при загрузке уровня)
+local function on_game_start()
+    -- Место для инициализации таблиц цен, подписок на события и т.п.
+    -- Пример: RegisterScriptCallback("actor_on_update", npc_trade.on_update)
+end
+
+RegisterScriptCallback("on_game_start", on_game_start)

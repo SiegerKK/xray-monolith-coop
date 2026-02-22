@@ -1152,3 +1152,171 @@ ai_draw_game_graph_objects 1
 | `alife_monster_brain_inline.h` | `src/xrServerEntities/` |
 | `xrServer_script_macroses.h` | `src/xrServerEntities/` |
 | `xrServer_Objects_ALife_script3.cpp` | `src/xrServerEntities/` |
+
+---
+
+## 17. Как добавить новую механику и дебаг-меню
+
+### 17.1 Общая архитектура скриптовой системы
+
+Игра использует **Lua (через Luabind)** для расширения игровой логики без перекомпиляции C++. Скрипты хранятся в `gamedata/scripts/*.script`.
+
+Движок предоставляет:
+- `RegisterScriptCallback(name, fn)` — подписка на игровые события
+- `SendScriptCallback(name, ...)` — генерация события
+- `ImGui.*` — полный набор ImGui-виджетов
+- `ImGui.Groups.*` — система регистрации дебаг-панелей в overlay
+
+**Точка входа в скриптовую систему:** движок вызывает функции-диспетчеры в `level_input.on_key_press` (зарегистрированы движком, см. `Level_input.cpp:188`).
+
+---
+
+### 17.2 Как работает F7 и ImGui overlay
+
+```
+Пользователь нажимает F7
+│
+└── Level_input.cpp::IR_OnKeyboardPress()
+    │
+    └── if (_curr == kEDITOR) {
+        │   // kEDITOR связан с F7 через xr_level_controller.cpp
+        │
+        ├── 1-е нажатие: Device.imgui().Show()       → показать overlay
+        ├── 2-е нажатие: Device.imgui().EnableInput() → захватить ввод (мышь/клавиши)
+        └── 3-е нажатие: Device.imgui().Show(false)  → скрыть overlay
+    }
+    │
+    └── Lua-диспетчер: level_input.on_key_press(key, action, disabled)
+        └── RegisterScriptCallback("on_key_press", fn) → Lua-обработчики
+```
+
+После 2-го нажатия F7 можно кликать по ImGui-меню.
+
+---
+
+### 17.3 Система ImGui.Groups
+
+Файл `gamedata/scripts/_imgui_groups.script` реализует точки расширения overlay:
+
+| Группа | Когда рендерится | Назначение |
+|---|---|---|
+| `Main` | Когда overlay видим | Основные виджеты |
+| `MenuBar` | Верхняя строка меню overlay | Кнопки-меню |
+| `Debug` | Подменю **Debug** в MenuBar | Инструменты отладки |
+| `Mods` | Подменю **Mods** в MenuBar | UI модов |
+| `Unique` | **Каждый кадр** (независимо от overlay) | Постоянные окна |
+
+**Добавить пункт в меню Debug:**
+```lua
+ImGui.Groups.Debug.Widget(function()
+    local clicked, value = ImGui.MenuItem("My Tool", nil, show_window)
+    if clicked then show_window = value end
+end)
+```
+
+**Добавить окно, которое рисуется всегда (когда открыто):**
+```lua
+ImGui.Groups.Unique.Widget(function()
+    if not show_window then return end
+    -- ImGui.Begin / ... / ImGui.End
+end)
+```
+
+---
+
+### 17.4 Ключевые Lua API для механики торговли НПЦ
+
+Все методы доступны на объектах типа `game_object` (онлайн-объекты):
+
+| Метод | Описание |
+|---|---|
+| `obj:money()` | Получить баланс (u32) |
+| `obj:transfer_money(amount, target)` | Перевести деньги другому объекту |
+| `obj:give_money(amount)` | Добавить деньги объекту |
+| `obj:transfer_item(item, target)` | Передать предмет в инвентарь `target` |
+| `obj:iterate_inventory(fn, owner)` | Итерация по инвентарю |
+| `obj:inventory_for_each(fn)` | Для каждого предмета |
+| `level.object_by_id(id)` | Получить онлайн-объект по ID |
+| `alife():object(id)` | Получить server-entity по ID (оффлайн тоже) |
+
+**Ограничение:** `transfer_item` и `money` работают только для объектов в **онлайн-зоне** (в радиусе загрузки от актора). В оффлайне для денег нужны кастомные server-entity биндинги.
+
+---
+
+### 17.5 Структура реализованной механики
+
+Два файла реализуют полный цикл «механика + дебаг»:
+
+#### `gamedata/scripts/npc_trade.script` — ядро механики
+
+```lua
+-- Публичный API модуля npc_trade
+npc_trade.get_balance(npc_id)                         → number
+npc_trade.list_inventory(npc_id)                      → { {section, id}, ... }
+npc_trade.sell_item(seller_id, buyer_id, item_id, price)  → ok, msg
+npc_trade.demo_trade(npc_a_id, npc_b_id, price)           → ok, msg
+```
+
+Логика `sell_item`:
+1. Найти онлайн-объекты продавца, покупателя и предмета
+2. Проверить, что предмет в инвентаре продавца (`iterate_inventory`)
+3. Проверить баланс покупателя
+4. `buyer:transfer_money(price, seller)` — деньги к продавцу
+5. `seller:transfer_item(item, buyer)` — предмет к покупателю
+
+#### `gamedata/scripts/debug_npc_trade.script` — ImGui дебаг-панель
+
+Регистрируется в `ImGui.Groups.Debug` под названием «NPC Trade».  
+Открывается: **F7 → (второй раз F7 для ввода) → Debug → NPC Trade**.
+
+Панель содержит:
+- Поля ввода ID продавца, покупателя, цены
+- Кнопку **Refresh** — обновляет инвентари и балансы
+- Список инвентаря продавца (кликабельный)
+- Кнопку **Sell Selected Item** — продать выбранный предмет
+- Кнопку **Demo Trade** — авто-сделка первым предметом в инвентаре
+- Прокручиваемый лог последних 12 операций
+
+---
+
+### 17.6 Как добавить новую механику — чеклист
+
+```
+1. Создать gamedata/scripts/<механика>.script
+   └── Объявить модуль: my_mechanic = {}
+   └── Реализовать функции (используя game_object API)
+   └── Зарегистрировать callback: RegisterScriptCallback("on_game_start", ...)
+
+2. Создать gamedata/scripts/debug_<механика>.script
+   └── Объявить local state = {} для состояния панели
+   └── Зарегистрировать пункт меню:
+       ImGui.Groups.Debug.Widget(function()
+           if ImGui.MenuItem("My Tool", nil, show) then show = not show end
+       end)
+   └── Зарегистрировать рендер окна:
+       ImGui.Groups.Unique.Widget(function()
+           if not show then return end
+           ImGui.Begin("My Tool")
+           -- ImGui виджеты
+           ImGui.End()
+       end)
+
+3. Открыть дебаг-панель в игре:
+   F7 → F7 (capture input) → Debug → My Tool
+```
+
+---
+
+### 17.7 Источники
+
+| Файл | Роль |
+|---|---|
+| `src/xrGame/Level_input.cpp` | F7 → `kEDITOR` → ImGui toggle |
+| `src/xrEngine/imgui_base.h` | `xr_imgui::ide` — движок overlay |
+| `gamedata/scripts/_imgui_groups.script` | Система групп ImGui |
+| `gamedata/scripts/imgui_helper.script` | Вспомогательные ImGui-функции |
+| `src/xrGame/script_game_object_script3.cpp` | `transfer_item`, `transfer_money`, `money`, `iterate_inventory` |
+| `src/xrGame/InventoryOwner_script.cpp` | `get_money`, `EnableTrade` |
+| `src/xrGame/script_game_object_inventory_owner.cpp` | Реализация `TransferItem`, `TransferMoney` |
+| `gamedata/scripts/npc_trade.script` | **Ядро механики NPC-торговли** |
+| `gamedata/scripts/debug_npc_trade.script` | **ImGui дебаг-панель для тестирования** |
