@@ -65,6 +65,16 @@ game_sv_Coop::~game_sv_Coop()
 
 void game_sv_Coop::Create(shared_str& options)
 {
+    // In Anomaly there is only ONE spawn file: "all.spawn" (located in $game_spawn$).
+    // m_game_params.m_game_or_spawn is used by CALifeSimulator as the SPAWN FILE name,
+    // but coop_host passes the LEVEL name (e.g. "l01_escape") as the first options component.
+    // We must patch m_game_or_spawn to "all" before inherited::Create() calls
+    // xr_new<CALifeSimulator>, otherwise new_game() tries to open "l01_escape.spawn" → FATAL.
+    // Note: level_name() still parses item[0] from the options string ("l01_escape"), which
+    // is correct because options is NOT modified here.
+    if (strstr(*options, "/new"))
+        xr_strcpy(g_pGamePersistent->m_game_params.m_game_or_spawn, "all");
+
     // game_sv_Single::Create checks for "/alife" and creates CALifeSimulator if present.
     // Our coop_host command always passes "/alife/new" so ALife is always initialized.
     inherited::Create(options);

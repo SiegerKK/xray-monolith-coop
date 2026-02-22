@@ -926,7 +926,8 @@ void CGamePersistent::LoadTitle(bool change_tip, shared_str map_name)
 		string512 buff;
 		u8 tip_num;
 		::luabind::functor<u8> m_functor;
-		bool is_single = !xr_strcmp(m_game_params.m_game_type, "single");
+		bool is_single = !xr_strcmp(m_game_params.m_game_type, "single")
+		              || !xr_strcmp(m_game_params.m_game_type, "coop"); // coop uses single-player loadscreen tips
 		if (is_single)
 		{
 			R_ASSERT(ai().script_engine().functor("loadscreen.get_tip_number", m_functor));
