@@ -8,11 +8,11 @@
 
 1. Игрок может **создать хост/сервер из меню**.
 2. Второй экземпляр игры (клиент) может **подключиться по LAN IP**.
-3. Подключение завершается без падения игры, с корректным handshаke и базовой синхронизацией состояния сессии.
-4. Клиент получает подтверждение подключения и входит в минимальное игровое состояние (хотя бы “joined in session / in level loading state / spawned stub actor”, в зависимости от текущей реализации).
+3. Подключение завершается без падения игры, с корректным handshake и базовой синхронизацией состояния сессии.
+4. Клиент получает подтверждение подключения и входит в минимальное игровое состояние (хотя бы "joined in session / in level loading state / spawned stub actor", в зависимости от текущей реализации).
 
 > **Важно:** Phase 1 не требует полноценного геймплея, ALife-кооператива, синхронизации инвентаря, стрельбы, квестов и т.п.  
-> Это этап “сетевого каркаса + пользовательский путь host/connect”.
+> Это этап "сетевого каркаса + пользовательский путь host/connect".
 
 ---
 
@@ -58,21 +58,41 @@ Phase 1 считается завершённым, если одновремен
 - [ ] Есть подробные логи handshake на сервере и клиенте.
 - [ ] Логи позволяют понять причину отказа подключения.
 
+### E. Совместимость и валидность
+- [ ] Сервер отклоняет клиента с несовпадающим `COOP_PROTOCOL_VERSION`.
+- [ ] Сервер отклоняет клиента с несовпадающим `CONTENT_HASH/MODSET_SIGNATURE` (или временным эквивалентом).
+- [ ] Клиент корректно показывает причину отказа (reason code + текст).
+
+### F. Диагностируемость отказов
+- [ ] При любой ошибке handshake в логах можно определить **последний успешно завершённый шаг**.
+- [ ] При protocol violation есть явный лог с состоянием peer/client state.
+- [ ] В debug/dev сборке доступен packet trace ring buffer dump.
+
 ---
 
 # 2. Границы Phase 1
 
 ## 2.1 Что входит в Phase 1 (In Scope)
 
+### Ограничение транспорта и платформы (P1-LIM-01)
+Phase 1 использует существующий сетевой транспорт X-Ray (DirectPlay8 / `IPureServer`/`IPureClient`) как **временное решение**.
+
+Следствия:
+- Phase 1 нацелен на **Windows host/client** как базовый сценарий проверки.
+- LAN-подключение — единственный обязательный режим для этапа.
+- Linux/Proton совместимость **не является критерием готовности Phase 1**.
+
+> Это не означает отказ от Linux/Proton в будущем; только фиксирует реалистичные границы этапа. Замена транспорта запланирована на более поздний roadmap-этап.
+
 ### Сетевой каркас
 - Инициализация кооп-режима (`game_sv_coop`, `game_cl_coop` или минимальный эквивалент).
 - Создание хост-сервера из меню.
 - Подключение клиента по IP.
-- Базовый handshake (версия протокола, session accept/reject, player id).
+- Базовый handshake (версия протокола, session accept/reject, player id, content/modset signature).
 - Базовое состояние сессии (session state replication minimal).
 
 ### UI / Menu integration (минимально)
-- Пункт меню: “Host Coop” / “Join Coop (LAN)”.
+- Пункт меню: "Host Coop" / "Join Coop (LAN)".
 - Поле для ввода IP (и опционально порт).
 - Показ статуса подключения / ошибки.
 
@@ -97,9 +117,17 @@ Phase 1 считается завершённым, если одновремен
 - Полноценный спавн двух игроков в игровой мир с управлением
 - Репликация мира/сущностей (кроме минимально необходимого stub)
 - Client prediction / reconciliation
-- Вынос Lua-логики из существующих модов (Phase 1 должен быть максимально на “чистом anomaly”)
+- Вынос Lua-логики из существующих модов (Phase 1 должен быть максимально на "чистом anomaly")
 - Dedicated standalone server binary (если это существенно усложняет путь)
 - Интернет/NAT traversal (только LAN)
+- Linux/Proton поддержка (не блокер Phase 1)
+
+**Явные Non-Goals (anti-scope-creep):**
+- Нет обязательства видеть второго игрока в мире
+- Нет обязательства загружать полноценный игровой уровень после `JOIN_ACCEPT`
+- Нет обязательства выполнять spawn actor
+- Нет обязательства вызывать Lua callbacks при успешном join
+- Нет обязательства поддерживать сейвы/загрузки
 
 ---
 
@@ -115,7 +143,7 @@ Phase 1 считается завершённым, если одновремен
   - отправляет запросы уровня подключения,
   - получает session state от хоста.
 
-> На этом этапе client-side “пассивность” означает прежде всего отсутствие попыток локально “создать мир” или принимать gameplay-решения.
+> На этом этапе client-side "пассивность" означает прежде всего отсутствие попыток локально "создать мир" или принимать gameplay-решения.
 
 ## 3.2 Почему так важно уже в Phase 1
 
@@ -138,7 +166,7 @@ Phase 1 считается завершённым, если одновремен
 **Ничего не переписываем** в транспортном слое, если можно обойтись расширением.
 
 ### Цель
-Поднять working path “server listens / client connects / packets exchanged”.
+Поднять working path "server listens / client connects / packets exchanged".
 
 ---
 
@@ -160,7 +188,7 @@ Phase 1 считается завершённым, если одновремен
   - connect by IP
   - отправку `HELLO/JOIN`
   - ожидание `ACCEPT/REJECT`
-  - переход в состояние “joined”
+  - переход в состояние "joined"
 
 > Если создание полноценных классов сразу слишком тяжёлое, допускается временная реализация через адаптер/обёртку. Но **названия и контракты** (`sv_coop`, `cl_coop`) желательно зафиксировать уже сейчас.
 
@@ -176,6 +204,7 @@ Phase 1 считается завершённым, если одновремен
 1. `CL_COOP_HELLO`
    - версия протокола
    - версия билда/игры (минимум строка/хэш/число)
+   - `CONTENT_HASH` / `MODSET_SIGNATURE` (строка версии модпака или агрегированный хэш; на Phase 1 допускается hardcoded build marker)
    - имя игрока (опционально)
    - capability flags (опционально, можно 0)
 
@@ -195,7 +224,7 @@ Phase 1 считается завершённым, если одновремен
    - session state
    - level name (если уже известно)
    - seed/time (опционально)
-   - флаг “load level now” / “wait”
+   - флаг "load level now" / "wait"
 
 3. `SV_COOP_JOIN_REJECT`
    - reason code
@@ -208,6 +237,7 @@ Phase 1 считается завершённым, если одновремен
 Зафиксировать enum причин уже в Phase 1:
 - `VERSION_MISMATCH`
 - `PROTOCOL_MISMATCH`
+- `CONTENT_MISMATCH` (несовпадение CONTENT_HASH/MODSET_SIGNATURE)
 - `SERVER_FULL`
 - `SESSION_NOT_READY`
 - `INVALID_REQUEST`
@@ -245,7 +275,9 @@ Phase 1 считается завершённым, если одновремен
 - `Disconnected`
 
 ### 4.4.3 Правило
-Любая отправка/обработка пакета должна валидироваться по состоянию.
+Любая отправка/обработка пакета должна валидироваться по состоянию.  
+**Любой пакет, пришедший вне допустимого состояния, считается protocol violation** (см. раздел 10).
+
 Пример:
 - `CL_COOP_JOIN_REQUEST` допустим только после `HELLO_ACK`
 - `SV_COOP_JOIN_ACCEPT` не должен приходить до `CL_COOP_JOIN_REQUEST`
@@ -304,7 +336,7 @@ Phase 1 считается завершённым, если одновремен
 - Некорректный IP формат
 - Таймаут подключения
 - Отказ сервера (с reason code)
-- Несовпадение версии
+- Несовпадение версии / контента
 
 ---
 
@@ -320,6 +352,7 @@ Phase 1 считается завершённым, если одновремен
 4. Подготовить параметры сессии:
    - `session_id`
    - `server_protocol_version`
+   - `content_hash` / `modset_signature`
    - `level_name` (если есть)
    - `max_players`
 5. Принимать подключения клиентов и вести peer state machine
@@ -335,7 +368,8 @@ Phase 1 считается завершённым, если одновремен
 - `max_players`
 - `current_players`
 - `protocol_version`
-- `build_signature` (опционально)
+- `build_signature`
+- `content_hash` / `modset_signature`
 - `is_joinable`
 
 Дополнительно (заготовка под будущее):
@@ -355,7 +389,7 @@ Phase 1 считается завершённым, если одновремен
 2. Создать/инициализировать `game_cl_coop`
 3. Инициировать транспортное подключение
 4. При успешном transport connect:
-   - отправить `CL_COOP_HELLO`
+   - отправить `CL_COOP_HELLO` (с protocol version + content_hash/modset_signature)
 5. После `SV_COOP_HELLO_ACK`:
    - отправить `CL_COOP_JOIN_REQUEST`
 6. После `SV_COOP_JOIN_ACCEPT`:
@@ -375,22 +409,23 @@ Phase 1 считается завершённым, если одновремен
 
 # 8. Версионирование и совместимость (обязательно уже в Phase 1)
 
-Чтобы избежать “немых падений”, вводим строгую проверку совместимости.
+Чтобы избежать "немых падений", вводим строгую проверку совместимости.
 
 ## 8.1 Что сравнивать
 Минимум:
 - `COOP_PROTOCOL_VERSION` (целое число)
 - `ENGINE_BUILD_SIGNATURE` (строка/хэш/версия билда)
+- `CONTENT_HASH` / `MODSET_SIGNATURE` (строка версии модпака или агрегированный хэш; на Phase 1 допускается временный hardcoded build marker)
 
 ## 8.2 Политика
 Если `COOP_PROTOCOL_VERSION` не совпал:
 - сервер отправляет `SV_COOP_JOIN_REJECT(PROTOCOL_MISMATCH)`
 
-Если билд/сигнатура не совпали (по желанию на Phase 1 можно только логировать):
-- либо reject (`VERSION_MISMATCH`)
-- либо warning в лог, если решено временно не блокировать
+Если `CONTENT_HASH`/`MODSET_SIGNATURE` не совпал:
+- сервер отправляет `SV_COOP_JOIN_REJECT(CONTENT_MISMATCH)`
+- клиент показывает понятное сообщение
 
-> Рекомендуется сразу сделать reject по протоколу и билду, чтобы не дебажить фантомные баги.
+> Рекомендуется сразу делать hard reject по обоим параметрам, чтобы не дебажить фантомные баги, вызванные несовместимым контентом.
 
 ---
 
@@ -402,14 +437,18 @@ Phase 1 считается завершённым, если одновремен
 
 - Старт хоста (порт, ip, режим)
 - Создание сессии
-- Новый transport-peer connected
-- Получен `CL_COOP_HELLO` (версия, билд, nick)
+- Новый transport-peer connected (с peer handle/id)
+- Transport-peer disconnected (с причиной)
+- Получен `CL_COOP_HELLO` (версия, билд, content_hash, nick)
+- Результат проверки версий/content_hash (match / mismatch + details)
 - Отправлен `SV_COOP_HELLO_ACK`
 - Получен `CL_COOP_JOIN_REQUEST`
-- Join accepted/rejected (с reason)
+- Join accepted/rejected (с reason code)
 - Назначен `player_id`
 - Peer disconnect (причина)
-- Ошибки парсинга пакетов / invalid state
+- Protocol violation: неожиданный пакет в состоянии X (с типом пакета и состоянием peer)
+- Timeout при ожидании пакета (с названием шага: `waiting_hello`, `waiting_join_request`)
+- Размер handshake-пакетов в байтах (debug mode)
 
 ## 9.2 Обязательные точки логирования (Client)
 
@@ -417,23 +456,40 @@ Phase 1 считается завершённым, если одновремен
 
 - Попытка connect (IP:port)
 - Transport connected
-- Отправлен `HELLO`
+- Отправлен `HELLO` (с версией и content_hash)
 - Получен `HELLO_ACK`
 - Отправлен `JOIN_REQUEST`
 - Получен `JOIN_ACCEPT` (player_id, session_id)
-- Получен `JOIN_REJECT` (reason)
+- Получен `JOIN_REJECT` (reason code + human-readable text)
 - Таймаут / disconnect / parse error
+- Start time / elapsed time на каждом шаге handshake
+- Timeout step (`waiting_hello_ack`, `waiting_join_accept`)
+- Размер handshake-пакетов в байтах (debug mode)
 
-## 9.3 Практическое требование
+## 9.3 Packet Trace Ring Buffer (обязательно для dev/debug сборки)
+
+В dev/debug сборке добавить ring buffer (последние 64–128 событий), где сохраняются:
+- timestamp
+- direction (`C->S`, `S->C`)
+- packet type id
+- packet size (байты)
+- local state / remote peer state на момент отправки/получения
+- result (`ok`, `rejected`, `invalid_state`)
+
+**При любой ошибке или таймауте — автоматически дампить ring buffer в лог.**
+
+Это резко ускорит разбор проблем на ранних фазах.
+
+## 9.4 Практическое требование
 Лог Phase 1 должен позволять определить:
 - упал ли transport
-- не сошлись ли версии
+- не сошлись ли версии или content hash
 - нарушена ли state machine
 - на каком шаге handshake остановился
 
 ---
 
-# 10. Ошибки и таймауты (надо реализовать сразу)
+# 10. Ошибки, таймауты и политика retry
 
 ## 10.1 Таймауты
 
@@ -447,13 +503,26 @@ Phase 1 считается завершённым, если одновремен
 - логирует конкретный шаг (`timeout waiting HELLO_ACK`)
 - показывает сообщение пользователю
 
-## 10.2 Обработка мусорных/неожиданных пакетов
-Любой пакет, пришедший в недопустимом состоянии:
-- логировать
-- игнорировать или разрывать соединение (в зависимости от критичности)
+## 10.2 Обработка protocol violation (fail-fast)
 
-Для Phase 1 допустимо:
-- лог + disconnect на protocol violation
+**Любой пакет, пришедший в недопустимом состоянии, считается protocol violation.**
+
+Политика Phase 1:
+- логировать нарушение с полным контекстом (тип пакета, текущее состояние peer/client)
+- **немедленно закрывать соединение** (fail-fast)
+- не пытаться "угадывать", что хотел отправитель
+
+> Fail-fast упрощает дебаг и не позволяет накопить невалидные состояния в early prototype.
+
+## 10.3 Политика retry (отсутствие автоматических ретраев)
+
+**На Phase 1 автоматические ретраи handshake не выполняются.**
+
+- Одна попытка подключения = один handshake flow.
+- При ошибке/таймауте клиент возвращается в `Failed/Idle`.
+- Пользователь вручную нажимает `Connect` для повторной попытки.
+
+> Автоматические ретраи на раннем этапе усложняют state machine и маскируют ошибки.
 
 ---
 
@@ -468,14 +537,30 @@ Phase 1 считается завершённым, если одновремен
 - Не тащить Lua callbacks в handshake
 - Не делать сложный lobby/menu framework
 
-## 11.2 Разрешённый временный “stub”
+## 11.2 Разрешённый временный "stub"
 Допускается, что после `JOIN_ACCEPT`:
-- клиент попадает в состояние “connected to coop session (stub)”
+- клиент попадает в состояние "connected to coop session (stub)"
 - без полноценной загрузки мира
 
 **НО** если в текущей архитектуре проще завершить тест через загрузку уровня — это тоже допустимо.
 
 Главное: **успешный host + connect по LAN IP без падения и с корректным handshake.**
+
+## 11.3 Разрешённый dev-entrypoint как временный UI fallback
+
+UI в Phase 1 обязателен (host/join из меню), **но не должен блокировать завершение этапа**, если menu integration затягивается.
+
+**Разрешённый fallback** при условии, что:
+- основной код host/connect уже реализован;
+- есть хотя бы минимальный технический UI путь (кнопка-заглушка / dev screen);
+- task по нормализации UI остаётся внутри Phase 1 (не выносится "на потом").
+
+Пример допустимого временного UI:
+```
+[ Developer Coop Test ]
+  [Host]   [IP: _______]   [Connect]
+  Status: ...
+```
 
 ---
 
@@ -505,8 +590,9 @@ Phase 1 считается завершённым, если одновремен
 - [ ] Реализовать сериализацию/десериализацию `HELLO`, `HELLO_ACK`, `JOIN_REQUEST`, `JOIN_ACCEPT`, `JOIN_REJECT`
 - [ ] Внедрить server peer state machine
 - [ ] Внедрить client state machine
-- [ ] Добавить проверки версии/протокола
-- [ ] Добавить таймауты и обработку ошибок
+- [ ] Добавить проверки version/protocol/content_hash
+- [ ] Добавить fail-fast для protocol violation
+- [ ] Добавить таймауты и обработку ошибок (без auto-retry)
 
 ### Результат
 Рабочий handshake при запуске вручную/через dev entrypoint.
@@ -519,11 +605,11 @@ Phase 1 считается завершённым, если одновремен
 
 #### Задачи
 - [ ] Кнопка `Host Coop (LAN)`
-- [ ] Экран/форма статуса хоста (можно минимальная)
+- [ ] Экран/форма статуса хоста (можно минимальная / dev screen)
 - [ ] Кнопка `Join Coop (LAN)`
 - [ ] Поле ввода IP (и порт опционально)
 - [ ] Кнопка `Connect`
-- [ ] Показ статуса/ошибки
+- [ ] Показ статуса/ошибки (с reason code)
 
 ### Результат
 Полный user flow host/connect из UI.
@@ -552,9 +638,10 @@ Phase 1 считается завершённым, если одновремен
 
 ## 13.1 Код
 - Каркас `game_sv_coop` / `game_cl_coop`
-- Базовый handshake protocol
+- Базовый handshake protocol (с content_hash check)
 - Menu integration (минимум Host/Join)
 - Логирование и error handling
+- Packet trace ring buffer (dev builds)
 
 ## 13.2 Документация
 - `phase_1.md` (этот документ)
@@ -565,6 +652,15 @@ Phase 1 считается завершённым, если одновремен
 - `host_success.log`
 - `client_success.log`
 - `client_reject_version_mismatch.log`
+- `client_reject_content_mismatch.log`
+
+## 13.4 Phase 1 Exit Artifacts (для старта Phase 2)
+Зафиксировать до начала Phase 2:
+- `coop_packet_ids.h` (handshake packet IDs зафиксированы)
+- client/server state enums (зафиксированы в коде)
+- примеры успешных/неуспешных handshake логов
+- список known blockers для level load/spawn (если обнаружены при тестировании)
+- список затронутых code paths с legacy `g_actor`/`db.actor` assumptions
 
 ---
 
@@ -633,6 +729,33 @@ Phase 1 считается завершённым, если одновремен
 
 ---
 
+## 14.6 Test Case P1-006: Content / modset mismatch reject
+**Steps**
+1. Искусственно изменить `CONTENT_HASH` / `MODSET_SIGNATURE` на клиенте или сервере
+2. Попробовать подключение
+
+**Expected**
+- Сервер отправляет `JOIN_REJECT(CONTENT_MISMATCH)`
+- Клиент показывает понятное сообщение с reason
+- Нет зависания и краша
+
+---
+
+## 14.7 Phase 1 Test Matrix
+
+| Сценарий | Тип | Ожидаемый результат |
+|----------|-----|---------------------|
+| Windows host / Windows client (LAN) | Must pass | Successful handshake |
+| Same machine (2 instances) | Nice to have | Successful handshake |
+| Invalid IP | Must pass | Expected fail, no crash |
+| Protocol mismatch | Must pass | Expected reject, no crash |
+| Content mismatch | Must pass | Expected reject, no crash |
+| No server / timeout | Must pass | Expected timeout, no crash |
+| Linux/Proton host/client | Not required for Phase 1 | — |
+| Internet/NAT | Not required for Phase 1 | — |
+
+---
+
 # 15. Риски Phase 1 и как их снижать
 
 ## 15.1 Риск: запутанная интеграция с существующими режимами игры
@@ -643,16 +766,29 @@ Phase 1 считается завершённым, если одновремен
 **Решение:** сначала сделать dev entrypoint (команда/кнопка-заглушка), потом минимальный UI.
 
 ## 15.3 Риск: неочевидные падения на обработке пакетов
-**Решение:** строгая state machine + подробное логирование + reason codes + таймауты.
+**Решение:** строгая state machine + fail-fast protocol violation + подробное логирование + reason codes + таймауты.
 
 ## 15.4 Риск: смешение Lua и C++ логики уже на этапе handshake
 **Решение:** Phase 1 handshake — только C++ слой, без Lua callbacks.
+
+## 15.5 Риск: legacy single-actor assumptions (`g_actor`, `db.actor`) ломают listen-server
+**Проблема:** даже если Phase 1 не делает полноценный gameplay/spawn, кодовые пути listen-server могут задевать legacy-предположения про одного актора (`g_actor`, `Actor()`, `db.actor` в Lua).
+
+**Решение:**
+- минимизировать прохождение через gameplay-код, который требует полноценного `g_actor`;
+- handshake и session setup держать в C++ сетевом/режимном слое;
+- если загрузка уровня/спавн вызывает каскад legacy-проблем — **допускается завершать Phase 1 на состоянии `Joined (stub)` без полноценного спавна**;
+- фиксировать найденные legacy-места в `phase_1_known_issues.md` для Phase 2.
+
+## 15.6 Риск: нестабильные результаты из-за несовместимого контента
+**Проблема:** команда ошибочно примет ошибки контента/модов за ошибки handshake/сети.  
+**Решение:** обязательная проверка `CONTENT_HASH`/`MODSET_SIGNATURE` с явным `CONTENT_MISMATCH` reject.
 
 ---
 
 # 16. Ограничения и сознательные компромиссы Phase 1
 
-Это **не** “первый играбельный кооп”.
+Это **не** "первый играбельный кооп".
 Это **первый успешный сетевой вертикальный срез**.
 
 Сознательные компромиссы:
@@ -661,6 +797,7 @@ Phase 1 считается завершённым, если одновремен
 - Можно не иметь красивый lobby UI
 - Можно иметь только 2 игрока (host + 1 client)
 - Можно оставить временные диагностические панели/логи
+- Транспорт (DirectPlay8) — временный; замена запланирована позднее
 
 ---
 
@@ -668,6 +805,7 @@ Phase 1 считается завершённым, если одновремен
 
 После успешного завершения Phase 1 следующий логичный этап (Phase 2):
 - базовый spawn игрока на сервере
+- решение `g_actor`/`LocalPlayerContext` проблемы
 - минимальная репликация позиции/состояния host/client
 - отображение второго игрока как сетевой сущности
 - сохранение server-authoritative принципа
@@ -678,24 +816,43 @@ Phase 1 считается завершённым, если одновремен
 
 # 18. Checklist для завершения Phase 1 (финальный)
 
-## Код
+## Core (Handshake)
 - [ ] `game_sv_coop` / `game_cl_coop` созданы и подключены
 - [ ] Реализован handshake protocol
 - [ ] Реализованы state machines server/client
-- [ ] Реализованы version/protocol checks
+- [ ] Реализованы version/protocol/content_hash checks
 - [ ] Реализованы timeout/error paths
-- [ ] Добавлены подробные логи
+- [ ] Host из меню запускает listen-server
+- [ ] Client из меню подключается по LAN IP
+- [ ] Handshake проходит (`HELLO/ACK/JOIN/ACCEPT`) без краша
+- [ ] Есть отказ по protocol mismatch
+- [ ] Есть отказ по content mismatch (или временной сигнатуре)
+
+## Stability
+- [ ] Нет крашей в success path
+- [ ] Нет зависаний на timeout/reject
+- [ ] Invalid state packets корректно режутся (protocol violation → disconnect)
+
+## Diagnostics
+- [ ] Добавлены подробные логи (все шаги handshake, peer connect/disconnect)
+- [ ] Видно последний успешный шаг при ошибке
+- [ ] Есть packet trace ring buffer dump (debug/dev)
+- [ ] Причины отказа отображаются в UI/логах
 
 ## UI
-- [ ] Host Coop из меню
-- [ ] Join Coop (LAN) из меню
+- [ ] Host Coop из меню (или dev entrypoint)
+- [ ] Join Coop (LAN) из меню (или dev entrypoint)
 - [ ] Ввод IP (и порт опционально)
-- [ ] Сообщения об ошибках/успехе
+- [ ] Сообщения об ошибках/успехе с reason codes
 
 ## Тест
 - [ ] 2 инстанса, успешный host/connect по LAN IP
 - [ ] Логи host/client сохранены
 - [ ] Известные ограничения зафиксированы
+
+## Scope discipline
+- [ ] Phase 1 завершён без "подтягивания" gameplay-фич
+- [ ] Phase 1 Exit Artifacts зафиксированы (packet ids, state enums, known blockers, g_actor touchpoints)
 
 ---
 
@@ -703,7 +860,9 @@ Phase 1 считается завершённым, если одновремен
 
 Даже в Phase 1 соблюдаем правило:
 
-> **Сервер создаёт и подтверждает состояние кооп-сессии. Клиент не считает себя “вошедшим”, пока не получил явный `JOIN_ACCEPT` от сервера.**
+> **Сервер создаёт и подтверждает состояние кооп-сессии. Клиент не считает себя "вошедшим", пока не получил явный `JOIN_ACCEPT` от сервера.**
+
+Definition of Done Phase 1 включает не только успешный `JOIN_ACCEPT`, но и достаточную диагностируемость неуспешных сценариев (timeout, protocol mismatch, invalid state, content mismatch).
 
 Это правило является фундаментом для всех последующих фаз (spawn, replication, inventory, ALife, combat).
 
@@ -713,17 +872,20 @@ Phase 1 считается завершённым, если одновремен
 
 При реализации Copilot должен придерживаться следующих приоритетов:
 
-1. **Стабильность и детерминированность flow** важнее “быстрого визуального результата”
+1. **Стабильность и детерминированность flow** важнее "быстрого визуального результата"
 2. **Логирование каждого шага handshake** обязательно
 3. **Минимальная поверхность изменений** в existing SP/MP коде
 4. **Никаких Lua-обходов** для сетевого handshake
 5. **Никаких gameplay features** сверх stated scope
+6. **Fail-fast** при protocol violation; не пытаться "починить" невалидный поток
 
 Если возникает выбор между:
-- “показать загрузку уровня” и
-- “надёжно завершить handshake без краша”,
+- "показать загрузку уровня" и
+- "надёжно завершить handshake без краша",
 
 то выбирать второе.
+
+Если обнаружены legacy g_actor/db.actor blocker при listen-server — завершить Phase 1 на `Joined (stub)` и зафиксировать в known issues.
 
 ---
 
@@ -732,7 +894,8 @@ Phase 1 считается завершённым, если одновремен
 Phase 1 должен доказать, что в `xray-monolith-coop` можно построить **корректный server-authoritative кооп** начиная с самого низа пользовательского сценария:
 - Host из меню
 - Join по LAN IP
-- Успешный handshake
+- Успешный handshake с проверкой версий и контента
 - Без падений и хаоса
+- С полной диагностируемостью неуспешных сценариев
 
 Это и будет фундаментом для дальнейшей реализации коопа с ALife.

@@ -5,7 +5,7 @@
 > **Целевая модель:** **Хост полностью контролирует мир и отправляет клиентам состояние; клиент отображает состояние и отправляет только ввод/запросы**  
 > **Аудитория:** разработчики C++/Lua, Copilot/AI-ассистенты, архитекторы, QA, отладка/профилирование  
 > **Проект:** `xray-monolith-coop` (форк `themrdemonized/xray-monolith`)  
-> **Версия документа:** 1.0
+> **Версия документа:** 1.1 (с интегрированными поправками amendments)
 
 ---
 
@@ -43,6 +43,9 @@
    - Ревизии, логи решений сервера, ресинк, net-debug UI.
 7. **Постепенная миграция**
    - Нельзя переписывать всё разом; MVP должен быть вертикальным срезом.
+8. **Transport-agnostic Protocol и Replication**
+   - Protocol/Simulation/Replication слои не зависят от конкретного transport backend.
+   - Транспорт можно заменить без переписывания gameplay-логики.
 
 ---
 
@@ -57,6 +60,9 @@
 - Lua/LuaJIT-слой (gamedata/scripts + script_storage) — должен стать *реактивным* слоем.  
 
 > Примечание: существующий транспорт на DirectPlay8 устаревший, но для LAN/host-based коопа его можно использовать на MVP-этапе.
+
+> **Важное требование:** до прохождения `anomaly_compatibility_analysis.md` нельзя считать оценку трудоёмкости коопа с ALife в Anomaly окончательной.
+> **Инвариант A-01:** Anomaly-специфика (db.actor, info_portions, single-actor квестовые скрипты, ALife job extensions) должна быть инвентаризирована отдельным документом как обязательный шаг перед планированием ALife-этапов.
 
 ### 2.2 Что **не** является целью первой архитектурной итерации
 - Полная замена сетевого транспорта (например, на ENet/SteamSockets) в первой фазе.
@@ -198,6 +204,60 @@
 
 ---
 
+### Инварианты транспортного слоя
+
+**Инвариант T-01: Транспорт временный**
+> На этапах MVP / ранних фаз допускается использование текущего транспорта X-Ray (DirectPlay8 через `IPureServer`/`IPureClient`), **НО** транспорт считается **временным техническим компромиссом**, а не долгосрочной целевой платформой для коопа.
+
+DirectPlay8 подходит для быстрого старта, но:
+- устарел и deprecated;
+- ограничивает переносимость (не работает нативно на Linux/Proton);
+- является слабым местом для Linux/Steam Deck аудитории.
+
+**Инвариант T-02: Нет лишних копирований на hot path**
+> `CoopTransport` adapter не должен вводить лишние полные копирования буфера пакета на горячем пути (hot path), кроме неизбежных границ API.
+
+---
+
+### Обёртка `CoopTransport` — минимальный контракт API
+
+```cpp
+// TODO_COOP_TRANSPORT_ABSTRACTION_API
+class CoopTransport {
+public:
+    bool StartServer(const char* bind_addr, u16 port);
+    void StopServer();
+    bool Connect(const char* addr, u16 port);
+    void Disconnect(CoopPlayerId peer, const char* reason);
+    void SendReliable(CoopPlayerId peer, const void* data, u32 size);
+    void SendUnreliable(CoopPlayerId peer, const void* data, u32 size);
+    void BroadcastReliable(const void* data, u32 size);
+    void BroadcastUnreliable(const void* data, u32 size);
+    void PollIncoming();  // вызывается из server tick Receive шага
+    EConnectionState GetConnectionState(CoopPlayerId peer);
+    u32 GetPing(CoopPlayerId peer);
+};
+```
+
+---
+
+### Transport Migration (Post-MVP / Post-Phase 2+)
+
+Отдельный roadmap-этап: переход на современный transport backend.
+
+#### Цель
+Заменить DirectPlay8 без переписывания кооп-логики (благодаря transport-agnostic Protocol Layer).
+
+#### Кандидаты
+- **Steam GameNetworkingSockets** — приоритетный кандидат: relay/NAT traversal без пробрасывания портов, активно поддерживается
+- **ENet** — альтернатива с простым UDP reliable/unreliable стеком
+
+#### Преимущество Steam GNS
+Встроенный relay устраняет проблему NAT traversal для интернет-коопа — это важно для аудитории Anomaly.
+
+
+---
+
 ## 5.2 Protocol Layer (новый)
 ### Цель
 Определить **контракт сообщений** между хостом и клиентом.
@@ -266,6 +326,46 @@
 - принимать authoritative сетевые решения,
 - самостоятельно поддерживать “истину мира” для коопа,
 - выполнять прямую P2P-синхронизацию вместо C++ протокола.
+
+---
+
+## 5.6 Core Engine Constraints (X-Ray legacy assumptions)
+
+### Constraint C-01: Global single actor assumption
+
+В legacy-коде X-Ray/Anomaly множество мест предполагают единственного "локального" актора:
+- `g_actor` — глобальная переменная `CActor*`
+- `Actor()` — глобальный доступ
+- `db.actor` в Lua
+- UI/квестовые системы, implicitly привязанные к одному игроку
+
+Это становится критическим риском для **listen-server**, где в одном процессе одновременно живут:
+- серверная симуляция мира;
+- клиент хоста;
+- (в будущем) несколько удалённых клиентов.
+
+### Обязательная стратегия смягчения: `LocalPlayerContext / ActorContext`
+
+Ввести абстракцию контекста игрока (целевой этап: Phase 2):
+
+```cpp
+// TODO_COOP_AUDIT_G_ACTOR_USAGE
+struct CoopActorContext {
+    CoopPlayerId player_id;
+    u16          actor_entity_id;   // CSE_Abstract ID
+    bool         is_local_player;   // true для хост-игрока на listen server
+    bool         is_server_context; // true в server-authoritative code path
+};
+```
+
+#### Принцип
+- В **server code path** запрещено использовать `g_actor` как источник истины.
+- В **client code path** `g_actor` допустим только как UI/render convenience для локального игрока.
+- Все новые участки кооп-кода используют `player_id` / `actor_entity_id` вместо глобальных указателей.
+
+#### Практическая задача
+`TODO_COOP_AUDIT_G_ACTOR_USAGE`: инвентаризация всех мест использования `g_actor`/`Actor()` в путях, затрагиваемых коопом.
+
 
 ---
 
@@ -517,7 +617,13 @@ Enum типов пакетов коопа.
 ### Поведение
 - несовместимая major-версия → отказ в подключении;
 - minor mismatch → допустим при обратной совместимости;
-- несовпадение `content_hash` → предупреждение/отказ (политика настраиваемая).
+- несовпадение `content_hash` → **отказ в подключении** на ранних фазах (strict policy).
+
+**Инвариант V-01: Строгая совместимость контента**
+> На ранних фазах кооп поддерживается только при **идентичном** наборе модов/контента у всех участников сессии.
+> Несовпадение `content_hash`/`modset_signature` → `JOIN_REJECT(CONTENT_MISMATCH)`.
+
+> `TODO_COOP_DEFINE_CONTENT_HASH_POLICY`: определить конкретный алгоритм агрегирования хэша модсета.
 
 ---
 
@@ -779,12 +885,15 @@ Enum типов пакетов коопа.
 ## 9.2 Частота тиков и тайминг
 ### Рекомендация
 Ввести отдельные частоты:
-- `server_tick_rate` (симуляция): например 20–30 Гц (настраиваемо)
+- `server_tick_rate_hz` (основной игровой/сетевой тик): например 20–30 Гц (настраиваемо)
+- `alife_tick_rate_hz` (ALife-шаг): **отдельная настройка**, может быть реже основного тика (например 5–10 Гц)
 - `replication_rate_high` (игроки/NPC близко): 10–20 Гц
 - `replication_rate_low` (дальние объекты): 2–5 Гц
 
 ### Принцип
 Симуляция и репликация могут иметь разные частоты.
+
+ALife-подсистема тяжелее и не обязана обновляться на той же частоте, что обработка input или сетевые heartbeat. Серверный pipeline должен корректно работать при `alife_tick_rate_hz < server_tick_rate_hz`.
 
 ---
 
@@ -1150,6 +1259,25 @@ Lua не является сетевым фундаментом коопа.
 - сборка на клиенте с проверкой целостности,
 - блокировка применения дельт до завершения full snapshot (или буферизация).
 
+### Контракт фрагментации (обязательные поля фрагмента)
+```
+snapshot_transfer_id   - идентификатор передачи
+snapshot_revision      - ревизия снапшота
+fragment_index         - индекс фрагмента (0-based)
+fragment_count         - всего фрагментов
+fragment_payload_size  - размер payload в байтах
+payload                - данные фрагмента
+checksum               - контрольная сумма (на фрагмент или на весь снапшот)
+```
+
+### Правила сборки
+1. Клиент **не применяет** partial snapshot.
+2. Snapshot применяется только после получения **всех фрагментов** и проверки целостности.
+3. При таймауте сборки — discard partial snapshot и запрос повторной передачи.
+4. Пока full snapshot не применён, клиент остаётся в `Syncing / SnapshotLoading`.
+
+> `TODO_COOP_SNAPSHOT_FRAGMENTATION_LIMITS`: определить MAX_SNAPSHOT_FRAGMENT_SIZE, SNAPSHOT_ASSEMBLY_TIMEOUT_MS, MAX_INFLIGHT_SNAPSHOT_TRANSFERS.
+
 ## 20.2 Delta Snapshot
 Основной рабочий режим:
 - отправлять только изменившиеся поля,
@@ -1320,12 +1448,28 @@ Lua не является сетевым фундаментом коопа.
 
 ---
 
+## Этап 0.5. Anomaly Compatibility Analysis (обязательный аналитический этап)
+**Цель:** инвентаризировать legacy single-actor assumptions Anomaly до планирования gameplay-этапов.
+
+Сделать:
+- `anomaly_compatibility_analysis.md`: прямые вызовы `db.actor`, неявные обёртки, скрипты падающие при отсутствии `db.actor`
+- Определить policy для `info_portions`/глобальных флагов (global vs per-player)
+- Инвентаризировать ALife script extensions (smart terrains, jobs, gulags)
+- Оценить объём работ по кооп-совместимости квестовых скриптов
+
+### Критерий готовности
+- `anomaly_compatibility_analysis.md` создан и содержит полный список проблемных мест.
+- Оценка трудоёмкости ALife-коопа обновлена на основе реальных данных.
+
+---
+
 ## Этап 1. Игроки и базовая репликация
 **Цель:** несколько игроков видят друг друга.
 
 Сделать:
 - `SV_PLAYER_BIND`
 - spawn actor для клиента
+- `LocalPlayerContext / CoopActorContext` абстракция (замена прямых `g_actor` в кооп-путях)
 - `CL_INPUT_FRAME`
 - авторитетный transform state
 - `SV_ENTITY_SPAWN` / `SV_DELTA_SNAPSHOT` (минимум для игроков)
@@ -1333,7 +1477,8 @@ Lua не является сетевым фундаментом коопа.
 
 ### Критерий готовности
 - 2 клиента входят в сессию,
-- перемещение одного отображается у другого через серверную репликацию.
+- перемещение одного отображается у другого через серверную репликацию,
+- новый кооп-код не использует `g_actor` напрямую.
 
 ---
 
@@ -1395,12 +1540,52 @@ Lua не является сетевым фундаментом коопа.
 
 ---
 
+## Этап 2.x / Phase 3. Минимальная клиентская предикция (UX-critical)
+**Цель:** устранить "лаговое" управление управляемым игроком.
+
+Сделать:
+- prediction движения локального игрока
+- reconciliation по authoritative server transform
+- correction smoothing
+- sequence numbers для input frames
+
+### Критерий готовности
+- управление локальным игроком не ощущается "тяжёлым" при пинге до 60мс.
+
+---
+
 ## Этап 6. Улучшение UX и стабильности
-- локальная предикция + reconciliation,
 - более эффективные дельты/компрессия,
 - расширенный netdebug,
 - сценарии reconnect/resync,
 - подготовка к dedicated server (по необходимости).
+
+---
+
+## Этап 7. Transport Migration (Post-Stable MVP)
+**Цель:** заменить DirectPlay8 на современный transport backend.
+
+Сделать:
+- заменить DirectPlay8 на ENet или Steam GameNetworkingSockets
+- адаптировать `CoopTransport` для нового backend
+- обеспечить NAT traversal / relay для интернет-коопа (Steam GNS)
+
+### Критерий готовности
+- кооп работает через Steam relay без пробрасывания портов.
+
+---
+
+## Этап 8. Level Transition Synchronization (Known Future Complexity)
+**Цель:** синхронизированная смена уровней в коопе.
+
+Заметка:
+> Смена уровней (`M_CHANGE_LEVEL`) в X-Ray — нетривиальная задача в коопе. Требует синхронизации всех клиентов, правил переноса состояния мира и игроков. Не реализуется в ранних фазах.
+
+Must-have контракт (для будущей спецификации):
+- `TODO_COOP_LEVEL_TRANSITION_DESIGN`
+- все клиенты переходят на новый уровень атомарно,
+- состояние игроков (инвентарь, статы) сохраняется через transition,
+- сервер orchestrates transition, клиенты ждут команды.
 
 ---
 
@@ -1429,6 +1614,11 @@ Lua не является сетевым фундаментом коопа.
 - `TODO_COOP_REPLICATION`
 - `TODO_COOP_ALIFE`
 - `TODO_COOP_LUA_BRIDGE`
+- `TODO_COOP_AUDIT_G_ACTOR_USAGE` — legacy single-actor assumptions
+- `TODO_COOP_DEFINE_CONTENT_HASH_POLICY` — алгоритм modset signature
+- `TODO_COOP_SNAPSHOT_FRAGMENTATION_LIMITS` — лимиты фрагментации снапшотов
+- `TODO_COOP_TRANSPORT_ABSTRACTION_API` — CoopTransport interface
+- `TODO_COOP_LEVEL_TRANSITION_DESIGN` — смена уровней
 
 Это помогает Copilot и людям быстро видеть зоны архитектурного долга.
 
@@ -1457,6 +1647,18 @@ Lua не является сетевым фундаментом коопа.
 - отдельные файлы подсистем,
 - контракт server tick,
 - protocol layer как единственная точка формата сообщений.
+
+## 28.5 Риск: Отсутствие Host Migration
+**Описание:** если хост (listen server) отключается — сессия завершается полностью.
+**Статус:** host migration **не поддерживается** и не планируется в ранних фазах. Это осознанное ограничение.
+**Снижение:** явное информирование игроков; рассмотреть в будущем после стабилизации dedicated server.
+
+## 28.6 Риск: DirectPlay8 — устаревший транспорт
+**Описание:** DirectPlay8 deprecated, не работает нативно на Linux/Proton, ограничена отладка на современных системах.
+**Снижение:**
+- transport-agnostic Protocol Layer с первого дня,
+- `CoopTransport` adapter как единственная точка смены транспорта,
+- явный Roadmap Этап 7 (Transport Migration).
 
 ---
 
@@ -1567,8 +1769,14 @@ Lua не является сетевым фундаментом коопа.
 
 ---
 
-## 34. Следующий документ (рекомендуется после этого)
-После утверждения этого документа создать отдельную спецификацию:
+## 34. Следующие документы (рекомендуется после этого)
+После утверждения этого документа создать отдельные спецификации:
+
+0. **`anomaly_compatibility_analysis.md`** (**обязательный**, создать до планирования ALife-этапов)
+   - инвентаризация db.actor, g_actor usage в SP/ALife путях
+   - info_portions и глобальные квестовые флаги
+   - ALife job/gulag scripts single-actor assumptions
+   - оценка трудоёмкости кооп-совместимости
 
 1. **`coop-protocol-mvp.md`**
    - точные бинарные форматы пакетов (`NET_Packet` order)
