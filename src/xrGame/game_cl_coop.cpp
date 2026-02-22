@@ -8,6 +8,7 @@
 #include "Level.h"
 #include "UIGameSP.h"      // временно: используем SP UI как заглушку
 #include "clsid_game.h"
+#include "ui/UICDkey.h"    // GetPlayerName_FromRegistry
 
 // ============================================================
 // Static helpers
@@ -256,16 +257,27 @@ void game_cl_Coop::handle_sv_pong(NET_Packet& P)
 
 void game_cl_Coop::send_hello()
 {
+    // Read real player name from registry / engine (same as Level_start.cpp)
+    char player_name[64] = {};
+    GetPlayerName_FromRegistry(player_name, sizeof(player_name));
+    if (!xr_strlen(player_name))
+    {
+        if (xr_strlen(Core.UserName))
+            strncpy_s(player_name, sizeof(player_name), Core.UserName, _TRUNCATE);
+        else
+            xr_strcpy(player_name, "stalker");
+    }
+
     NET_Packet P;
     P.w_begin(M_COOP_HANDSHAKE);
     P.w_u8(COOP_CL_HELLO);
     P.w_u16(COOP_PROTOCOL_VERSION);
     P.w_u32(COOP_CONTENT_HASH);
-    P.w_stringZ("player");  // TODO_COOP_UI: использовать реальный ник из настроек
+    P.w_stringZ(player_name);
 
     sv_EventSend(P);
-    Msg("[COOP][CL] CL_HELLO sent | protocol=%u content_hash=0x%08X elapsed_ms=%u",
-        COOP_PROTOCOL_VERSION, COOP_CONTENT_HASH,
+    Msg("[COOP][CL] CL_HELLO sent | protocol=%u content_hash=0x%08X nick='%s' elapsed_ms=%u",
+        COOP_PROTOCOL_VERSION, COOP_CONTENT_HASH, player_name,
         current_time_ms() - m_state_time_ms);
 
     set_state(eCCS_HelloSent);

@@ -114,7 +114,7 @@ bool CLevel::net_start1()
 		typedef IGame_Persistent::params params;
 		params& p = g_pGamePersistent->m_game_params;
 		// Connect
-		if (!xr_strcmp(p.m_game_type, "single"))
+		if (!xr_strcmp(p.m_game_type, "single") || !xr_strcmp(p.m_game_type, "coop"))  // TODO_COOP Phase 1: coop uses xrServer like single (no GameSpy auth)
 		{
 			Server = xr_new<xrServer>();
 		}

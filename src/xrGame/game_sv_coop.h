@@ -92,5 +92,8 @@ public:
     // Called from xrServer::OnMessage case M_COOP_HANDSHAKE
     void OnCoopPacket(NET_Packet& P, ClientID sender);
 
+    // Sends REJECT + transport disconnect. Called on protocol violation/timeout.
+    void disconnect_peer(ClientID id, ECoopRejectReason reason, const char* why);
+
     const CoopSessionState& session() const { return m_session; }
 };

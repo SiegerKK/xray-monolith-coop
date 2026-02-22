@@ -1647,6 +1647,79 @@ actor->character_physics_support()->SetRemoved();
 */
 #endif
 
+// ============================================================
+// TODO_COOP Phase 1.C: Coop Host / Connect console commands
+// Usage:
+//   coop_host <level_name>
+//   coop_connect <ip>[:<port>]
+// ============================================================
+
+struct CCC_CoopHost : public IConsole_Command
+{
+    CCC_CoopHost(LPCSTR N) : IConsole_Command(N) { bEmptyArgsHandled = FALSE; }
+
+    virtual void Execute(LPCSTR args)
+    {
+        if (!args || !args[0])
+        {
+            Msg("! [COOP] Usage: coop_host <level_name>");
+            return;
+        }
+
+        if (g_pGameLevel)
+        {
+            Msg("! [COOP] Already in a level. Disconnect first.");
+            return;
+        }
+
+        // Build server options: level/coop  — same format as level/single
+        string512 sv_opts;
+        xr_sprintf(sv_opts, "%s/coop", args);
+
+        // Client connects to the local server via localhost
+        const char* cl_opts = "localhost";
+
+        Msg("[COOP] Hosting level: %s", args);
+        Engine.Event.Defer("KERNEL:start",
+            size_t(xr_strdup(sv_opts)),
+            size_t(xr_strdup(cl_opts)));
+    }
+
+    virtual void Save(IWriter*) {}
+};
+
+struct CCC_CoopConnect : public IConsole_Command
+{
+    CCC_CoopConnect(LPCSTR N) : IConsole_Command(N) { bEmptyArgsHandled = FALSE; }
+
+    virtual void Execute(LPCSTR args)
+    {
+        if (!args || !args[0])
+        {
+            Msg("! [COOP] Usage: coop_connect <ip>[:<port>]");
+            return;
+        }
+
+        if (g_pGameLevel)
+        {
+            Msg("! [COOP] Already in a level. Disconnect first.");
+            return;
+        }
+
+        // Client-only connect: no local server, connect to remote host
+        string512 cl_opts;
+        xr_sprintf(cl_opts, "%s", args);
+
+        Msg("[COOP] Connecting to: %s", args);
+        Engine.Event.Defer("KERNEL:start",
+            size_t(0),  // no local server
+            size_t(xr_strdup(cl_opts)));
+    }
+
+    virtual void Save(IWriter*) {}
+};
+// ============================================================
+
 //#ifndef MASTER_GOLD
 #	include "game_graph.h"
 
@@ -3045,4 +3118,8 @@ void CCC_RegisterCommands()
 	// Wallmark distances
 	CMD4(CCC_Float, "g_wallmark_range_static", &wallmark_range_static, 0.f, 1000.f);
 	CMD4(CCC_Float, "g_wallmark_range_skeleton", &wallmark_range_skeleton, 0.f, 1000.f);
+
+	// TODO_COOP Phase 1.C: coop host/connect console commands
+	CMD1(CCC_CoopHost,    "coop_host");
+	CMD1(CCC_CoopConnect, "coop_connect");
 }

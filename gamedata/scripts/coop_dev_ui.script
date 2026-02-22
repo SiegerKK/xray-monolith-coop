@@ -1,0 +1,151 @@
+-------------------------------------------------------------------------------
+-- coop_dev_ui.script
+-- TODO_COOP Phase 1.C: Developer UI panel for cooperative mode (Host / Join LAN)
+--
+-- Renders an ImGui window accessible via the in-game overlay (Mods menu).
+-- Provides Host Coop (LAN) and Join Coop (LAN) buttons without requiring
+-- full menu XML integration.
+--
+-- Activation: Mods → Coop Dev Panel (in ImGui overlay, default Ctrl+F11)
+-------------------------------------------------------------------------------
+
+local panel_open      = false   -- whether the window is open
+local host_level      = ""      -- level name to host (e.g. "l01_escape")
+local join_ip         = ""      -- IP to connect to (e.g. "192.168.1.5:1235")
+local status_msg      = ""      -- last action status message
+local status_error    = false   -- true → show message in red
+
+-------------------------------------------------------------------------------
+-- Helpers
+-------------------------------------------------------------------------------
+
+local function set_status(msg, is_error)
+    status_msg   = msg or ""
+    status_error = is_error or false
+end
+
+local function exec(cmd)
+    get_console():execute(cmd)
+end
+
+-------------------------------------------------------------------------------
+-- Main panel draw function
+-- Called every frame when the Mods menu entry is visible.
+-------------------------------------------------------------------------------
+
+local function draw_panel()
+    if not panel_open then return end
+
+    local visible, open = ImGui.Begin("Coop Dev Panel##coop_dev", true,
+        bit.bor(ImGui.ImGuiWindowFlags.NoCollapse, ImGui.ImGuiWindowFlags.AlwaysAutoResize))
+
+    panel_open = open
+
+    if not visible then
+        ImGui.End()
+        return
+    end
+
+    ImGui.PushTextWrapPos(340)
+    ImGui.TextDisabled("[ TODO_COOP Phase 1.C — Developer entrypoint ]")
+    ImGui.PopTextWrapPos()
+    ImGui.Separator()
+
+    -- -----------------------------------------------------------------------
+    -- HOST section
+    -- -----------------------------------------------------------------------
+    ImGui.Text("Host Coop (LAN)")
+    ImGui.SameLine()
+    ImGui.HelpMarker("Starts a listen-server and connects as local client.\nLevel must exist in the game graph.", true)
+
+    ImGui.SetNextItemWidth(220)
+    local changed_level, new_level = ImGui.InputText("Level##coop_host_level", host_level, 128)
+    if changed_level then host_level = new_level end
+
+    if ImGui.Button("Host##coop_host_btn", {100, 0}) then
+        if host_level == "" then
+            set_status("ERROR: level name cannot be empty.", true)
+        elseif level.present() then
+            set_status("ERROR: Already in a level. Disconnect first (console: disconnect).", true)
+        else
+            exec("coop_host " .. host_level)
+            set_status("Hosting '" .. host_level .. "' — check log for progress.", false)
+        end
+    end
+
+    ImGui.Separator()
+
+    -- -----------------------------------------------------------------------
+    -- JOIN section
+    -- -----------------------------------------------------------------------
+    ImGui.Text("Join Coop (LAN)")
+
+    ImGui.SetNextItemWidth(220)
+    local changed_ip, new_ip = ImGui.InputText("Host IP##coop_join_ip", join_ip, 64)
+    if changed_ip then join_ip = new_ip end
+
+    ImGui.SameLine()
+    ImGui.HelpMarker("Enter host IP (e.g. 192.168.1.5) or IP:port (e.g. 192.168.1.5:1235).\nDefault port 1235 is used if omitted.", false)
+
+    if ImGui.Button("Connect##coop_join_btn", {100, 0}) then
+        if join_ip == "" then
+            set_status("ERROR: IP address cannot be empty.", true)
+        elseif level.present() then
+            set_status("ERROR: Already in a level. Disconnect first (console: disconnect).", true)
+        else
+            exec("coop_connect " .. join_ip)
+            set_status("Connecting to '" .. join_ip .. "' — check log for progress.", false)
+        end
+    end
+
+    ImGui.Separator()
+
+    -- Disconnect button
+    if ImGui.Button("Disconnect##coop_disc", {120, 0}) then
+        exec("disconnect")
+        set_status("Disconnecting...", false)
+    end
+
+    ImGui.SameLine()
+    if ImGui.Button("Clear Log##coop_clear", {100, 0}) then
+        set_status("", false)
+    end
+
+    -- Status message
+    if status_msg ~= "" then
+        ImGui.Separator()
+        if status_error then
+            ImGui.PushStyleColor(ImGui.Col.Text, 1.0, 0.3, 0.3, 1.0)
+        else
+            ImGui.PushStyleColor(ImGui.Col.Text, 0.6, 1.0, 0.6, 1.0)
+        end
+        ImGui.TextWrapped(status_msg)
+        ImGui.PopStyleColor()
+    end
+
+    ImGui.End()
+end
+
+-------------------------------------------------------------------------------
+-- Register with ImGui.Groups system
+-- Adds "Coop Dev Panel" entry to Mods menu in the overlay.
+-------------------------------------------------------------------------------
+
+-- The draw_panel function is always registered to Unique so the window persists
+-- even when the overlay menu bar is closed (since it becomes an independent window).
+if ImGui and ImGui.Groups then
+    -- Menu entry in "Mods"
+    ImGui.Groups.Widget("Mods", function()
+        local clicked, _ = ImGui.MenuItem("Coop Dev Panel", "", false, true)
+        if clicked then panel_open = not panel_open end
+    end)
+
+    -- The actual window renders independently every frame
+    ImGui.Groups.Widget("Unique", function()
+        draw_panel()
+    end)
+
+    Msg("[COOP] coop_dev_ui registered in ImGui.Groups.Mods")
+else
+    Msg("[COOP] WARNING: ImGui.Groups not available — coop_dev_ui skipped")
+end

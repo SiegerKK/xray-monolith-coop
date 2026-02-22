@@ -106,6 +106,34 @@ void game_sv_Coop::Update()
 }
 
 // ============================================================
+// disconnect_peer — sends REJECT (if still handshaking), sets state,
+// then calls transport-level DisconnectClient via m_server.
+// ============================================================
+
+void game_sv_Coop::disconnect_peer(ClientID id, ECoopRejectReason reason, const char* why)
+{
+    Msg("[COOP][SV] Disconnecting peer 0x%08X | reason=%u why=%s",
+        id.value(), (unsigned)reason, why ? why : "");
+
+    // Send REJECT so client state machine transitions cleanly before drop
+    send_join_reject(id, reason);
+
+    // Transport disconnect
+    IClient* client = m_server->ID_to_client(id);
+    if (client)
+    {
+        char reason_str[64];
+        xr_sprintf(reason_str, "[COOP] disconnected: %s", why ? why : "");
+        m_server->DisconnectClient(client, reason_str);
+    }
+
+    // Mark peer as disconnecting
+    CoopPeerEntry* peer = find_peer(id);
+    if (peer)
+        peer->state = eCPS_Disconnecting;
+}
+
+// ============================================================
 // Player connect / disconnect
 // ============================================================
 
@@ -187,9 +215,9 @@ void game_sv_Coop::OnCoopPacket(NET_Packet& P, ClientID sender)
 
     default:
         // Protocol violation: неожиданный packet ID
-        Msg("[COOP][SV] Protocol violation: unexpected packet 0x%02X in state %s | client_id=0x%08X — disconnect",
+        Msg("[COOP][SV] Protocol violation: unexpected packet 0x%02X in state %s | client_id=0x%08X",
             packet_id, peer_state_name(peer->state), sender.value());
-        // TODO_COOP: инициировать disconnect
+        disconnect_peer(sender, eCRR_InvalidRequest, "unexpected_packet");
         break;
     }
 }
@@ -203,9 +231,9 @@ void game_sv_Coop::handle_cl_hello(NET_Packet& P, ClientID sender, CoopPeerEntry
     // Ожидаем только в состоянии Connected
     if (peer.state != eCPS_Connected)
     {
-        Msg("[COOP][SV] Protocol violation: CL_HELLO in state %s | client_id=0x%08X — disconnect",
+        Msg("[COOP][SV] Protocol violation: CL_HELLO in state %s | client_id=0x%08X",
             peer_state_name(peer.state), sender.value());
-        // TODO_COOP: disconnect
+        disconnect_peer(sender, eCRR_InvalidRequest, "hello_wrong_state");
         return;
     }
 
@@ -257,9 +285,9 @@ void game_sv_Coop::handle_cl_join_request(NET_Packet& P, ClientID sender, CoopPe
     // Ожидаем только после HelloReceived
     if (peer.state != eCPS_HelloReceived)
     {
-        Msg("[COOP][SV] Protocol violation: CL_JOIN_REQUEST in state %s | client_id=0x%08X — disconnect",
+        Msg("[COOP][SV] Protocol violation: CL_JOIN_REQUEST in state %s | client_id=0x%08X",
             peer_state_name(peer.state), sender.value());
-        // TODO_COOP: disconnect
+        disconnect_peer(sender, eCRR_InvalidRequest, "join_wrong_state");
         return;
     }
 
@@ -413,9 +441,7 @@ void game_sv_Coop::tick_peer_timeouts()
         {
             Msg("[COOP][SV] Timeout for peer 0x%08X at step '%s' | state=%s",
                 peer.client_id.value(), step, peer_state_name(peer.state));
-            send_join_reject(peer.client_id, eCRR_Timeout);
-            // TODO_COOP: инициировать disconnect через transport
-            peer.state = eCPS_Disconnecting;
+            disconnect_peer(peer.client_id, eCRR_Timeout, step);
         }
     }
 }
