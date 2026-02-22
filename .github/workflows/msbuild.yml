@@ -181,6 +181,7 @@ jobs:
 
   build_mt:
     name: build-mt-job
+    if: github.ref == 'refs/heads/all-in-one-vs2022-wpo'
     runs-on: windows-latest
 
     strategy:
@@ -202,8 +203,6 @@ jobs:
 
     - name: Checkout repo
       uses: actions/checkout@v4
-      with:
-        ref: all-in-one-vs2022-wpo-mt
 
     - name: Init submodules
       uses: snickerbockers/submodules-init@v4
@@ -289,6 +288,7 @@ jobs:
 
   release:
     needs: [pack_gamedata, build, build_mt]
+    if: github.ref == 'refs/heads/all-in-one-vs2022-wpo'
     name: Release
     runs-on: ubuntu-latest
     steps:
