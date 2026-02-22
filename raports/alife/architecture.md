@@ -199,15 +199,15 @@ void CStalkerActionGatherItems::execute() {
 update() (CALifeMonsterBrain)
 │
 ├── select_task()
-│   └── Ищет CSE_ALifeSmartZone с наименьшим расстоянием/приоритетом
+│   └── Обходит все SmartZone → берёт ту, где suitable() максимален
 │       → присваивает m_smart_terrain, m_task_reached = false
 │
 ├── process_task()
-│   └── Двигает НПЦ по графу к smart terrain
+│   └── Двигает НПЦ по графу к task().level_vertex_id
 │       → когда достигнут: m_task_reached = true → выполняет задачу
 │
 └── default_behaviour()
-    └── idle (случайное брожение / ожидание)
+    └── idle (брожение по умолчанию / ожидание)
 ```
 
 ---
@@ -343,7 +343,225 @@ struct SMoneyDef {
 
 ---
 
-## 8. Движение в оффлайне
+## 8. Целеполагание НПЦ
+
+### 8.1 Задачи случайные или нет?
+
+**Нет, задачи не случайные.** Выбор умной зоны (smart terrain) — **приоритетный**, основанный на оценочной функции `suitable()`.
+
+```cpp
+// CALifeMonsterBrain::select_task() — упрощённо
+void select_task() {
+    if (object().m_smart_terrain_id != 0xffff) return; // уже назначена задача
+
+    // Временной барьер: поиск запускается не чаще чем раз в m_time_interval
+    if (m_last_search_time + m_time_interval > current_time) return;
+
+    float best_value = flt_min;
+    for each CSE_ALifeSmartZone* terrain : all_smart_terrains {
+        if (!terrain->enabled(&object)) continue;      // зона должна быть активна
+        float value = terrain->suitable(&object);      // оценка пригодности
+        if (value > best_value) {
+            best_value = value;
+            object.m_smart_terrain_id = terrain->ID;  // берём лучшую
+        }
+    }
+    if (найдена) terrain.register_npc(&object);
+}
+```
+
+### 8.2 Что такое «умная зона» (Smart Terrain)
+
+`CSE_ALifeSmartZone` — базовый класс задачи. Подклассы переопределяют:
+
+| Метод | Назначение |
+|---|---|
+| `enabled(object)` | Может ли этот НПЦ принять задачу? |
+| `suitable(object)` | Насколько эта зона подходит (возвращает оценку) |
+| `register_npc(object)` | Зарегистрировать НПЦ как выполняющего задачу |
+| `unregister_npc(object)` | Снять НПЦ с задачи |
+| `task(object)` | Вернуть объект `CALifeSmartTerrainTask` с координатой цели |
+
+`CALifeSmartTerrainTask` содержит:
+- имя патрульного пути (`patrol_path_name`)
+- индекс точки маршрута
+- `game_vertex_id` и `level_vertex_id` для навигации
+
+### 8.3 Итоговая логика целеполагания
+
+```
+brain().update()
+│
+├── select_task()   — раз в N игровых секунд:
+│   └── обход всех SmartZone → max(suitable()) → m_smart_terrain_id
+│
+├── process_task()  — каждый тик:
+│   ├── движение по game graph к task().level_vertex_id
+│   └── по достижении: m_task_reached = true → выполнение задачи
+│
+└── default_behaviour()  — если задачи нет:
+    └── idle / patrol по точкам по умолчанию
+```
+
+**Вывод:** У каждого НПЦ есть конкретная цель — умная зона, выбранная по максимальному приоритету. «Случайность» присутствует лишь косвенно: если несколько зон имеют одинаковый `suitable()`, порядок обхода даёт детерминированный, но неочевидный выбор.
+
+---
+
+## 9. Лут аномалий и сбор артефактов
+
+### 9.1 Оффлайн-режим
+
+**НПЦ не собирают артефакты в оффлайн-симуляции.**  
+Поиск по всем `alife_*.cpp` не обнаружил ни одного файла, содержащего одновременно слова `artifact` и `alife`-логику сбора. Класс `CALifeHumanObjectHandler` (отвечающий за работу с предметами) содержит **только заглушки**:
+
+```cpp
+// alife_human_object_handler.cpp — все методы-стабы:
+bool can_take_item()   { return false; }
+int  choose_equipment(){ return -1;   }
+int  choose_weapon()   { return -1;   }
+int  choose_food()     { return -1;   }
+CSE_ALifeItemWeapon* best_weapon() { return 0; }
+```
+
+### 9.2 Онлайн-режим
+
+В **онлайн-режиме** (когда НПЦ активен на уровне) работает действие `CStalkerActionGatherItems`:
+
+```cpp
+// stalker_alife_actions.cpp
+void CStalkerActionGatherItems::execute() {
+    // Предмет берётся из памяти НПЦ (memory().item().selected())
+    u32 lv = object().memory().item().selected()->ai_location().level_vertex_id();
+    object().movement().set_level_dest_vertex(lv);
+    object().movement().set_desired_position(&item->Position());
+    object().sight().setup(SightManager::eSightTypePosition, &item->Position());
+}
+```
+
+**Ключевое ограничение:** предмет должен **попасть в память** НПЦ (через визуальное/слуховое восприятие) прежде чем он начнёт к нему идти. Артефакты в аномалиях попадают в память только если НПЦ находится достаточно близко и «видит» их.
+
+### 9.3 Вывод
+
+| Сценарий | Реализован? |
+|---|---|
+| НПЦ идёт к аномалии за артефактом (оффлайн) | ❌ Нет |
+| НПЦ видит артефакт и подбирает его (онлайн) | ✅ Через `GatherItems` + memory |
+| Специальной «охоты за артефактами» как цели | ❌ Нет |
+
+---
+
+## 10. Лут трупов
+
+### 10.1 Оффлайн-режим
+
+**Лут трупов в оффлайн-симуляции не реализован.**  
+`CALifeHumanObjectHandler` содержит заглушки для всех методов работы с предметами. Трупы обрабатываются только как позиция тела (`assign_death_position()`).
+
+### 10.2 Онлайн-режим
+
+В онлайн-режиме НПЦ **могут** подбирать оружие/боеприпасы с трупов через стандартный механизм памяти и `GatherItems`. Трёхфазный поиск в `ai_stalker_fire.cpp::update_best_item_info_impl()`:
+
+```
+Фаза 1: инвентарь НПЦ — есть ли уже оружие, способное убить?
+Фаза 2: память НПЦ   — есть ли рядом боеприпасы к текущему оружию?
+Фаза 3: память НПЦ   — есть ли пара оружие+патроны (возможно на трупе)?
+```
+
+Однако лут трупа происходит не как «целенаправленный поиск лута», а как побочный эффект общего механизма поиска предметов в памяти.
+
+### 10.3 Вывод
+
+| Сценарий | Реализован? |
+|---|---|
+| НПЦ целенаправленно идёт грабить труп (оффлайн) | ❌ Нет |
+| НПЦ видит оружие на трупе и поднимает (онлайн) | ✅ Через memory + GatherItems |
+| Оффлайн-бой → переход лута победителю | ✅ `CALifeCombatManager` |
+
+---
+
+## 11. Смена оружия и брони
+
+### 11.1 Предпочтения снаряжения (случайные при спавне)
+
+При создании НПЦ его «мозг» инициализирует **случайные предпочтения**:
+
+```cpp
+// alife_human_brain.cpp
+m_cpEquipmentPreferences.resize(5);  // 5 типов снаряжения
+m_cpMainWeaponPreferences.resize(4); // 4 типа основного оружия
+
+for (int i = 0; i < m_cpEquipmentPreferences.size(); ++i)
+    m_cpEquipmentPreferences[i] = u8(::Random.randI(3)); // значение 0, 1 или 2
+
+for (int i = 0; i < m_cpMainWeaponPreferences.size(); ++i)
+    m_cpMainWeaponPreferences[i] = u8(::Random.randI(3));
+```
+
+Эти массивы используются в оценочных функциях (`ef_primary.cpp`) как весовые коэффициенты при сравнении предметов по типу.
+
+### 11.2 Выбор лучшего оружия (онлайн)
+
+`CAI_Stalker::choose_weapon()` в `ai_stalker_alife.cpp` перебирает инвентарь и выбирает лучшее оружие **по типу и оценочной функции**:
+
+```cpp
+void choose_weapon(EWeaponPriorityType weapon_priority_type) {
+    for each weapon in inventory {
+        int j = ef_storage().m_pfPersonalWeaponType->dwfGetWeaponType();
+        // Фильтрация по категории (нож / пистолет / дробовик / снайперка / etc.)
+        // Для каждого типа — своя категория j
+        
+        float value = ef_storage().m_pfMainWeaponValue->ffGetValue();
+        if (item_in_slot) value += 10.0f; // бонус за уже надетое
+        if (value > best_value) best_weapon = &weapon;
+    }
+    if (best_weapon) buy_item_virtual(*best_weapon); // экипировать
+}
+```
+
+### 11.3 Условия подбора нового оружия (online)
+
+`CAI_Stalker::can_take()` + `conflicted()` реализуют **систему приоритетов**:
+
+| Приоритет | Критерий | Результат |
+|---|---|---|
+| 1 | Наличие патронов | НПЦ предпочитает оружие, к которому есть боеприпасы |
+| 2 | Состояние оружия | Лучший `GetCondition()` выигрывает (допуск 5%) |
+| 3 | Тип оружия | Разные типы → берём более дорогое |
+| 4 | Ранг НПЦ vs ранг оружия | Оружие выше ранга не берётся |
+
+```cpp
+bool conflicted(const CInventoryItem* current, const CWeapon* new_weapon, ...) {
+    if (current_enough_ammo && !new_enough_ammo)  return true;  // оставить текущее
+    if (!current_enough_ammo && new_enough_ammo)  return false; // взять новое
+    if (!fsimilar(cur.cond, new.cond, .05f))
+        return cur.cond >= new.cond;                             // лучшее состояние
+    if (cur.type != new.type)
+        return cur.Cost() >= new.Cost();                         // дороже = лучше
+    if (cur_rank != new_rank)
+        return cur_rank >= new_rank;                             // выше ранг = лучше
+    return true; // по умолчанию — оставить текущее
+}
+```
+
+### 11.4 Смена брони
+
+Специальной логики смены **брони/костюма** в ALife-коде **не обнаружено**:
+- `choose_equipment()` в `alife_human_object_handler.cpp` — заглушка, возвращает `-1`
+- `m_cpEquipmentPreferences` формирует предпочтения, но метода «надеть лучший костюм» нет
+- Снаряжение фиксируется при спавне через `spawn_supplies()` и не меняется в оффлайне
+
+### 11.5 Итоговая таблица
+
+| Возможность | Оффлайн | Онлайн |
+|---|---|---|
+| Сменить оружие на лучшее | ❌ | ✅ `choose_weapon()` + `can_take()` |
+| Сменить броню/костюм | ❌ | ❌ (заглушка) |
+| Подобрать боеприпасы | ❌ | ✅ через `GatherItems` + memory |
+| Предпочтения снаряжения влияют на выбор | ✅ (при спавне) | ✅ (при оценке предметов) |
+
+---
+
+## 12. Движение в оффлайне
 
 `CALifeMonsterMovementManager` и вспомогательные классы:
 
@@ -357,7 +575,7 @@ struct SMoneyDef {
 
 ---
 
-## 9. Интеграция со скриптами (Lua)
+## 13. Интеграция со скриптами (Lua)
 
 Основная логика ALife реализована на **C++**. Lua используется для:
 
@@ -369,7 +587,7 @@ struct SMoneyDef {
 
 ---
 
-## 10. Итоговая схема
+## 14. Итоговая схема
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -422,4 +640,8 @@ struct SMoneyDef {
 | `alife_trader_abstract.cpp` | `src/xrGame/` |
 | `InventoryOwner.h/.cpp` | `src/xrGame/` |
 | `xrServer_Objects_ALife_Monsters.h` | `src/xrServerEntities/` |
-| `specific_character.h` | `src/xrGame/` |
+| `ai_stalker_alife.cpp` | `src/xrGame/` |
+| `ai_stalker_fire.cpp` | `src/xrGame/` |
+| `alife_human_object_handler.h/.cpp` | `src/xrGame/` |
+| `stalker_alife_task_actions.h/.cpp` | `src/xrGame/` |
+| `ef_primary.cpp` | `src/xrGame/` |
