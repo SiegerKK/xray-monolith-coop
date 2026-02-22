@@ -4,6 +4,7 @@
 #include "level.h"
 #include "xrmessages.h"
 #include "game_cl_base.h"
+#include "game_cl_coop.h"   // TODO_COOP Phase 1
 #include "net_queue.h"
 //#include "Physics.h"
 #include "xrServer.h"
@@ -492,6 +493,15 @@ void CLevel::ClientReceive()
 		case M_SECURE_MESSAGE:
 			{
 				OnSecureMessage(*P);
+			}
+			break;
+		case M_COOP_HANDSHAKE:   // TODO_COOP Phase 1
+			{
+				game_cl_Coop* coop_cl = smart_cast<game_cl_Coop*>(game);
+				if (coop_cl)
+					coop_cl->OnCoopMessage(*P);
+				else
+					Msg("![COOP][CL] M_COOP_HANDSHAKE received but game is not coop mode");
 			}
 			break;
 		}

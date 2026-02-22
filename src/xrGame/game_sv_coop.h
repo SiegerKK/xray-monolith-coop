@@ -89,8 +89,8 @@ public:
     virtual void OnPlayerConnect(ClientID id_who);
     virtual void OnPlayerDisconnect(ClientID id_who, LPSTR Name, u16 GameID);
 
-    // Packet handler — receives coop-range packets via OnEvent
-    virtual void OnEvent(NET_Packet& P, u16 type, u32 time, ClientID sender);
+    // Called from xrServer::OnMessage case M_COOP_HANDSHAKE
+    void OnCoopPacket(NET_Packet& P, ClientID sender);
 
     const CoopSessionState& session() const { return m_session; }
 };

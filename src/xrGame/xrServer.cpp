@@ -9,6 +9,7 @@
 #include "level.h"
 #include "game_cl_base.h"
 #include "game_sv_mp.h"
+#include "game_sv_coop.h"   // TODO_COOP Phase 1
 #include "game_cl_base_weapon_usage_statistic.h"
 #include "ai_space.h"
 #include "../xrEngine/IGame_Persistent.h"
@@ -756,6 +757,15 @@ u32 xrServer::OnMessage(NET_Packet& P, ClientID sender) // Non-Zero means broadc
 	case M_SECURE_MESSAGE:
 		{
 			OnSecureMessage(P, CL);
+		}
+		break;
+	case M_COOP_HANDSHAKE:   // TODO_COOP Phase 1
+		{
+			game_sv_Coop* coop_game = smart_cast<game_sv_Coop*>(game);
+			if (coop_game)
+				coop_game->OnCoopPacket(P, sender);
+			else
+				Msg("![COOP][SV] M_COOP_HANDSHAKE received but game is not coop mode");
 		}
 		break;
 	}

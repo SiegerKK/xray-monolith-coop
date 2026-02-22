@@ -44,16 +44,17 @@ public:
     game_cl_Coop();
     virtual ~game_cl_Coop();
 
-    virtual CUIGameCustom* createGameUI();
+    // Called once after game mode is created and transport connection is up.
+    // Sends CL_COOP_HELLO to kick off the handshake.
+    virtual void Init();
 
-    // Инициирует connect к хосту по IP (вызывается из UI/меню)
-    // TODO_COOP_UI: вызвать из кнопки "Join Coop (LAN)"
-    void StartConnect(const char* ip, u16 port = 0);
+    virtual CUIGameCustom* createGameUI();
 
     // Вызывается из Level tick — проверка таймаутов
     virtual void shedule_Update(u32 dt);
 
-    // Обработчик входящих coop-пакетов от сервера
+    // Обработчик входящих coop-пакетов от сервера.
+    // Вызывается из Level_network_messages.cpp case M_COOP_HANDSHAKE.
     void OnCoopMessage(NET_Packet& P);
 
     ECoopClientState  GetCoopState() const { return m_state; }

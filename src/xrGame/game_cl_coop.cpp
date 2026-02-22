@@ -85,25 +85,15 @@ CUIGameCustom* game_cl_Coop::createGameUI()
 }
 
 // ============================================================
-// StartConnect — инициирование подключения
-// TODO_COOP_UI: вызывать из menu-кнопки Join
+// Init — вызывается сразу после создания game_cl_Coop.
+// Transport-соединение уже установлено (CL получил M_SV_CONFIG_NEW_CLIENT).
+// Отправляем HELLO чтобы запустить handshake.
 // ============================================================
 
-void game_cl_Coop::StartConnect(const char* ip, u16 /*port*/)
+void game_cl_Coop::Init()
 {
-    if (m_state != eCCS_Idle && m_state != eCCS_Failed && m_state != eCCS_Disconnected)
-    {
-        Msg("[COOP][CL] StartConnect ignored: already in state %s", client_state_name(m_state));
-        return;
-    }
-
-    Msg("[COOP][CL] Connect attempt | ip=%s", ip);
-    set_state(eCCS_Connecting);
-
-    // TODO_COOP: инициировать transport connect через Level().IPureClient
-    // После успешного connect transport вызовет net_event_callback → eCCS_ConnectedTransport
-    // Затем send_hello() будет вызван здесь или из callback
-    // Для Phase 1 переходим в ConnectedTransport сразу (stub)
+    inherited::Init();
+    Msg("[COOP][CL] Init: transport connected, sending HELLO");
     set_state(eCCS_ConnectedTransport);
     send_hello();
 }
@@ -267,13 +257,13 @@ void game_cl_Coop::handle_sv_pong(NET_Packet& P)
 void game_cl_Coop::send_hello()
 {
     NET_Packet P;
-    P.w_begin(M_EVENT);
+    P.w_begin(M_COOP_HANDSHAKE);
     P.w_u8(COOP_CL_HELLO);
     P.w_u16(COOP_PROTOCOL_VERSION);
     P.w_u32(COOP_CONTENT_HASH);
     P.w_stringZ("player");  // TODO_COOP_UI: использовать реальный ник из настроек
 
-    // TODO_COOP: отправить через transport (Level().IPureClient->SendTo(...))
+    sv_EventSend(P);
     Msg("[COOP][CL] CL_HELLO sent | protocol=%u content_hash=0x%08X elapsed_ms=%u",
         COOP_PROTOCOL_VERSION, COOP_CONTENT_HASH,
         current_time_ms() - m_state_time_ms);
@@ -284,11 +274,11 @@ void game_cl_Coop::send_hello()
 void game_cl_Coop::send_join_request()
 {
     NET_Packet P;
-    P.w_begin(M_EVENT);
+    P.w_begin(M_COOP_HANDSHAKE);
     P.w_u8(COOP_CL_JOIN_REQUEST);
     P.w_u32(m_session_id);
 
-    // TODO_COOP: отправить через transport
+    sv_EventSend(P);
     Msg("[COOP][CL] CL_JOIN_REQUEST sent | session=0x%08X elapsed_ms=%u",
         m_session_id, current_time_ms() - m_state_time_ms);
 }
@@ -296,11 +286,11 @@ void game_cl_Coop::send_join_request()
 void game_cl_Coop::send_ping()
 {
     NET_Packet P;
-    P.w_begin(M_EVENT);
+    P.w_begin(M_COOP_HANDSHAKE);
     P.w_u8(COOP_CL_PING);
     P.w_u32(current_time_ms());
 
-    // TODO_COOP: отправить через transport
+    sv_EventSend(P);
 }
 
 // ============================================================

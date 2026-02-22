@@ -153,12 +153,11 @@ void game_sv_Coop::OnPlayerDisconnect(ClientID id_who, LPSTR /*Name*/, u16 /*Gam
 }
 
 // ============================================================
-// OnEvent — точка входа для входящих coop-пакетов
-// В базовом классе OnEvent обрабатывает M_EVENT с типом.
-// Для Phase 1: определяем вхождение по первому байту payload.
+// OnCoopPacket — точка входа для входящих coop-пакетов.
+// Вызывается из xrServer::OnMessage case M_COOP_HANDSHAKE.
 // ============================================================
 
-void game_sv_Coop::OnEvent(NET_Packet& P, u16 /*type*/, u32 /*time*/, ClientID sender)
+void game_sv_Coop::OnCoopPacket(NET_Packet& P, ClientID sender)
 {
     // Читаем id coop-пакета из начала payload
     u8 packet_id = 0;
@@ -299,7 +298,7 @@ void game_sv_Coop::handle_cl_ping(NET_Packet& /*P*/, ClientID sender)
 void game_sv_Coop::send_hello_ack(ClientID to, const CoopPeerEntry& peer)
 {
     NET_Packet P;
-    P.w_begin(M_EVENT);
+    P.w_begin(M_COOP_HANDSHAKE);
     P.w_u8(COOP_SV_HELLO_ACK);
     P.w_u16(m_session.protocol_version);
     P.w_u32(m_session.session_id);
@@ -315,7 +314,7 @@ void game_sv_Coop::send_hello_ack(ClientID to, const CoopPeerEntry& peer)
 void game_sv_Coop::send_join_accept(ClientID to, CoopPeerEntry& peer)
 {
     NET_Packet P;
-    P.w_begin(M_EVENT);
+    P.w_begin(M_COOP_HANDSHAKE);
     P.w_u8(COOP_SV_JOIN_ACCEPT);
     P.w_u16(peer.player_id);
     P.w_u32(m_session.session_id);
@@ -335,7 +334,7 @@ void game_sv_Coop::send_join_accept(ClientID to, CoopPeerEntry& peer)
 void game_sv_Coop::send_join_reject(ClientID to, ECoopRejectReason reason)
 {
     NET_Packet P;
-    P.w_begin(M_EVENT);
+    P.w_begin(M_COOP_HANDSHAKE);
     P.w_u8(COOP_SV_JOIN_REJECT);
     P.w_u8((u8)reason);
     P.w_stringZ(reject_reason_name(reason));
@@ -349,7 +348,7 @@ void game_sv_Coop::send_join_reject(ClientID to, ECoopRejectReason reason)
 void game_sv_Coop::send_pong(ClientID to)
 {
     NET_Packet P;
-    P.w_begin(M_EVENT);
+    P.w_begin(M_COOP_HANDSHAKE);
     P.w_u8(COOP_SV_PONG);
     P.w_u32(current_time_ms());
 

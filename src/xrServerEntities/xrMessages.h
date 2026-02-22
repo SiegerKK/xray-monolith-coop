@@ -91,6 +91,7 @@ enum
 	M_SECURE_MESSAGE,
 	M_CREATE_PLAYER_STATE,
 	M_COMPRESSED_UPDATE_OBJECTS,
+	M_COOP_HANDSHAKE,   // TODO_COOP Phase 1: dedicated coop handshake channel
 
 	MSG_FORCEDWORD = u32(-1)
 };
