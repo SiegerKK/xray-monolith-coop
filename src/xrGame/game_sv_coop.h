@@ -95,5 +95,10 @@ public:
     // Sends REJECT + transport disconnect. Called on protocol violation/timeout.
     void disconnect_peer(ClientID id, ECoopRejectReason reason, const char* why);
 
+    // Pure virtual overrides required by game_sv_GameState
+    virtual BOOL OnTouch(u16 eid_who, u16 eid_target, BOOL bForced = FALSE) override { return TRUE; }
+    virtual void OnDetach(u16 eid_who, u16 eid_target) override {}
+    virtual BOOL CanHaveFriendlyFire() override { return FALSE; }
+
     const CoopSessionState& session() const { return m_session; }
 };
