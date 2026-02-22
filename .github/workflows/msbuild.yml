@@ -25,6 +25,7 @@ env:
 
   DX11AVX: DX11-AVX
   PACK_GAMEDATA_NAME: 00_modded_exes_gamedata.db0
+  PACK_GAMEDATA_ARTIFACT: gamedata_pack
 
 jobs:
   pack_gamedata:
@@ -46,8 +47,8 @@ jobs:
     - name: Upload gamedata
       uses: actions/upload-artifact@v4.6.0
       with:
-        # Artifact name
-        name: ${{env.PACK_GAMEDATA_NAME}}
+        # Artifact name — must NOT contain dots; download-artifact@v4 skips dot-named artifacts
+        name: ${{env.PACK_GAMEDATA_ARTIFACT}}
         
         # A file, directory or wildcard pattern that describes what to upload
         path: ./compressor/${{env.PACK_GAMEDATA_NAME}}
@@ -198,7 +199,7 @@ jobs:
         mkdir release/db
         mkdir release/db/mods
 
-        mv ${{env.PACK_GAMEDATA_NAME}}/*.db0 release/db/mods
+        mv ${{env.PACK_GAMEDATA_ARTIFACT}}/*.db0 release/db/mods
 
         mv ${{env.DX11AVX}}_exe/*.exe release/bin
 
