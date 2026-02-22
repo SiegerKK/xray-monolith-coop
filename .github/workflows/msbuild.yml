@@ -23,17 +23,7 @@ env:
   # Path to the solution file relative to the root of the project.
   SOLUTION_FILE_PATH: src/engine-vs2022.sln
 
-  # Configuration type to build.
-  # You can convert this to a build matrix if you need coverage of multiple configuration types.
-  # https://docs.github.com/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
-  DX11: DX11
-  DX10: DX10
-  DX9: DX9
-  DX8: DX8
   DX11AVX: DX11-AVX
-  DX10AVX: DX10-AVX
-  DX9AVX: DX9-AVX
-  DX8AVX: DX8-AVX
   PACK_GAMEDATA_NAME: 00_modded_exes_gamedata.db0
 
 jobs:
@@ -77,7 +67,7 @@ jobs:
 
     strategy:
       matrix:
-        buildconf: ["DX11", "DX10", "DX9", "DX8", "DX11-AVX", "DX10-AVX", "DX9-AVX", "DX8-AVX"]
+        buildconf: ["DX11-AVX"]
 
     steps:
     - name: Configure Pagefile
@@ -210,14 +200,7 @@ jobs:
 
         mv ${{env.PACK_GAMEDATA_NAME}}/*.db0 release/db/mods
 
-        mv ${{env.DX11}}_exe/*.exe release/bin
-        mv ${{env.DX10}}_exe/*.exe release/bin
-        mv ${{env.DX9}}_exe/*.exe release/bin
-        mv ${{env.DX8}}_exe/*.exe release/bin
         mv ${{env.DX11AVX}}_exe/*.exe release/bin
-        mv ${{env.DX10AVX}}_exe/*.exe release/bin
-        mv ${{env.DX9AVX}}_exe/*.exe release/bin
-        mv ${{env.DX8AVX}}_exe/*.exe release/bin
 
         cd release
         zip -r 'STALKER-Anomaly-modded-exes_${{steps.datetime.outputs.today}}.zip' ./*
@@ -229,14 +212,7 @@ jobs:
     - name: Move PDBs to folder
       run: |
         mkdir pdb
-        mv ${{env.DX11}}_pdb/*.zip pdb
-        mv ${{env.DX10}}_pdb/*.zip pdb
-        mv ${{env.DX9}}_pdb/*.zip pdb
-        mv ${{env.DX8}}_pdb/*.zip pdb
         mv ${{env.DX11AVX}}_pdb/*.zip pdb
-        mv ${{env.DX10AVX}}_pdb/*.zip pdb
-        mv ${{env.DX9AVX}}_pdb/*.zip pdb
-        mv ${{env.DX8AVX}}_pdb/*.zip pdb
 
     - name: Publish
       uses: softprops/action-gh-release@v2.3.2
