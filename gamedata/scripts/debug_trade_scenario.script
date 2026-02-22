@@ -33,23 +33,16 @@
 
 -- ─── Конфигурация ─────────────────────────────────────────────────────────────
 
+-- Trade params come from mod_npc_trade.ltx via npc_trade_config.
+-- Only spawn offsets (geometry) stay hardcoded here.
 local CFG = {
-    -- "stalker_loner" — стандартная секция НПЦ-лонера в CoP/SoC.
-    -- Лонеры нейтральны друг к другу, что нужно для мирной торговли.
-    -- Если секция не найдена (другой билд/мод), попробуйте "sim_default_stalker".
-    seller_section = "stalker_loner",
-    buyer_section  = "stalker_loner",
-    weapon_section = "wpn_ak74",         -- оружие (2 штуки продавцу)
-    buyer_money    = 500,                -- руб. покупателю
     -- Смещения по XZ-плоскости от актора. Корректируйте при необходимости,
     -- если NPC спавнятся внутри стен.
-    seller_offset  = vector():set( 3, 0,  2),  -- смещение продавца от актора
-    buyer_offset   = vector():set(-3, 0, -2),  -- смещение покупателя от актора
-    -- Задержка выдачи снаряжения после спавна (мс).
-    -- NPC требуется время для перехода в онлайн — без задержки give_money
-    -- вернёт "объект ещё оффлайн", а create с parent_id не найдёт game_object.
-    setup_delay_ms = 2000,
+    seller_offset  = vector():set( 3, 0,  2),
+    buyer_offset   = vector():set(-3, 0, -2),
 }
+
+local function dcfg(key) return npc_trade_config.get_debug(key) end
 
 -- ─── Состояние сценария ───────────────────────────────────────────────────────
 
@@ -136,11 +129,11 @@ local function setup_equipment()
         return
     end
     slog("--- Выдаём снаряжение ---")
-    give_item(scenario.seller_id, CFG.weapon_section)
-    give_item(scenario.seller_id, CFG.weapon_section)
-    give_money(scenario.buyer_id, CFG.buyer_money)
-    slog("Stalker_%d (продавец): 2x [%s], 0 руб.", scenario.seller_id, CFG.weapon_section)
-    slog("Stalker_%d (покупатель): 0 оружий, %d руб.", scenario.buyer_id, CFG.buyer_money)
+    give_item(scenario.seller_id, dcfg("weapon_section"))
+    give_item(scenario.seller_id, dcfg("weapon_section"))
+    give_money(scenario.buyer_id, dcfg("buyer_money"))
+    slog("Stalker_%d (продавец): 2x [%s], 0 руб.", scenario.seller_id, dcfg("weapon_section"))
+    slog("Stalker_%d (покупатель): 0 оружий, %d руб.", scenario.buyer_id, dcfg("buyer_money"))
 
     slog("--- Запускаем переговоры ---")
     npc_trade_negotiation.start(scenario.buyer_id, scenario.seller_id)
@@ -163,11 +156,11 @@ local function start_scenario()
     slog("Метод спавна: alife():create() — СКРИПТ-СПАВН (не ALife).")
     slog("  ALife-спавн управляется движком через смарт-терреины/spawn-точки.")
     slog("  Скрипт-спавн обходит симуляцию и создаёт объект немедленно.")
-    slog("Секция НПЦ: [%s] (лонеры, нейтральны друг к другу)", CFG.seller_section)
+    slog("Секция НПЦ: [%s] (лонеры, нейтральны друг к другу)", dcfg("stalker_section"))
     slog("--- Спавним сталкеров ---")
 
-    scenario.seller_id = spawn_at_offset(CFG.seller_section, CFG.seller_offset)
-    scenario.buyer_id  = spawn_at_offset(CFG.buyer_section,  CFG.buyer_offset)
+    scenario.seller_id = spawn_at_offset(dcfg("stalker_section"), CFG.seller_offset)
+    scenario.buyer_id  = spawn_at_offset(dcfg("stalker_section"), CFG.buyer_offset)
 
     if not scenario.seller_id or not scenario.buyer_id then
         slog("ОШИБКА: не удалось заспавнить сталкеров")
@@ -176,10 +169,11 @@ local function start_scenario()
 
     slog("Stalker_%d = продавец | Stalker_%d = покупатель",
         scenario.seller_id, scenario.buyer_id)
-    slog("Ждём %.1fс чтобы NPC перешли в онлайн...", CFG.setup_delay_ms / 1000.0)
+    local delay_ms = dcfg("setup_delay_ms")
+    slog("Ждём %.1fс чтобы NPC перешли в онлайн...", delay_ms / 1000.0)
 
     -- Отложенная выдача снаряжения: через setup_delay_ms мс после спавна
-    scenario.setup_at = time_global() + CFG.setup_delay_ms
+    scenario.setup_at = time_global() + delay_ms
 end
 
 local function stop_scenario()
@@ -249,8 +243,8 @@ ImGui.Groups.Unique.Widget(function()
     -- ── Конфигурация ──
     ImGui.TextDisabled(strformat(
         "Продавец: [%s]+2x[%s]  |  Покупатель: [%s]+%d руб.",
-        CFG.seller_section, CFG.weapon_section,
-        CFG.buyer_section,  CFG.buyer_money))
+        dcfg("stalker_section"), dcfg("weapon_section"),
+        dcfg("stalker_section"), dcfg("buyer_money")))
 
     ImGui.Separator()
 

@@ -20,18 +20,11 @@
 
 npc_trade_negotiation = {}
 
--- ─── Конфигурация ────────────────────────────────────────────────────────────
+-- ─── Конфигурация (загружается из mod_npc_trade.ltx) ────────────────────────
 
--- Интервал между шагами автомата (мс реального времени)
-local STEP_MS         = 2000
--- Таймаут ожидания подхода покупателя (шагов)
-local APPROACH_TIMEOUT = 5
--- Дистанция «подошёл достаточно близко» (метры)
-local CLOSE_ENOUGH_M  = 5.0
--- Цена оружия
-local WEAPON_PRICE    = 300
--- Шанс согласия продавца (0–100). 100 = всегда соглашается (надёжный тест).
-local ACCEPT_CHANCE   = 100
+-- Все параметры берутся из npc_trade_config.get() — без хардкода.
+-- Вызовы cfg() ленивые: first access читает из ini_sys.
+local function cfg(key) return npc_trade_config.get(key) end
 
 -- ─── Состояния ───────────────────────────────────────────────────────────────
 
@@ -188,8 +181,8 @@ local function buyer_step(s)
             buyer:set_desired_position(seller:position())
         end
         -- Переходим вперёд когда подошли ИЛИ по таймауту
-        if dist <= CLOSE_ENOUGH_M or s.approach_steps >= APPROACH_TIMEOUT then
-            if dist > CLOSE_ENOUGH_M then
+        if dist <= cfg("close_enough_m") or s.approach_steps >= cfg("approach_timeout_steps") then
+            if dist > cfg("close_enough_m") then
                 tlog(s, strformat("Stalker_%d: (таймаут подхода, расстояние %.1fm — принудительный переход)",
                     s.buyer_id, dist))
             end
@@ -210,12 +203,13 @@ local function buyer_step(s)
             return
         end
         s.item_id = weapon:id()
-        local ok, msg = npc_trade.sell_item(s.seller_id, s.buyer_id, s.item_id, WEAPON_PRICE)
+        local price = cfg("weapon_price")
+        local ok, msg = npc_trade.sell_item(s.seller_id, s.buyer_id, s.item_id, price)
         if ok then
             local b_bal = buyer  and buyer:money()  or 0
             local s_bal = seller and seller:money() or 0
             tlog(s, strformat("[СДЕЛКА ЗАВЕРШЕНА] Stalker_%d купил '%s' у Stalker_%d за %d руб.",
-                s.buyer_id, weapon:section(), s.seller_id, WEAPON_PRICE))
+                s.buyer_id, weapon:section(), s.seller_id, price))
             tlog(s, strformat("  Баланс: покупатель=%d руб | продавец=%d руб", b_bal, s_bal))
             tlog(s, strformat("  Оружий у покупателя теперь: %d", count_weapons(s.buyer_id)))
         else
@@ -244,15 +238,16 @@ local function seller_step(s)
 
     elseif seller_state == "reviewing" then
         local roll = math.random(1, 100)
-        s.accepted = (roll <= ACCEPT_CHANCE)
+        local chance = cfg("accept_chance")
+        s.accepted = (roll <= chance)
         if s.accepted then
             tlog(s, strformat(
                 "Stalker_%d: рассматриваю запрос... ПРИНЯТЬ (%d/100 <= %d%% шанс)",
-                s.seller_id, roll, ACCEPT_CHANCE))
+                s.seller_id, roll, chance))
         else
             tlog(s, strformat(
                 "Stalker_%d: рассматриваю запрос... ОТКАЗАТЬ (%d/100 > %d%% шанс)",
-                s.seller_id, roll, ACCEPT_CHANCE))
+                s.seller_id, roll, chance))
         end
         s.seller_si = s.seller_si + 1
 
@@ -302,7 +297,7 @@ end
 function npc_trade_negotiation.update()
     local now = time_global()
     for _, s in pairs(sessions) do
-        if not s.done and (now - s.last_step_ms) >= STEP_MS then
+        if not s.done and (now - s.last_step_ms) >= cfg("negotiation_step_ms") then
             s.last_step_ms = now
             seller_step(s)
             buyer_step(s)

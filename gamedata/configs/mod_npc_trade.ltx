@@ -1,0 +1,62 @@
+; ============================================================
+;  NPC Trade System — configuration
+;  Loaded via ini_sys by npc_trade_config.script
+;
+;  DLTX note: this file introduces NEW sections (no ! override
+;  prefix needed).  Add or tweak any value here; the script
+;  layer always falls back to its built-in defaults if a key
+;  is absent, so it is safe to add keys incrementally.
+; ============================================================
+
+; ─── Core mechanics ─────────────────────────────────────────
+[npc_trade]
+
+; suitable() score returned for an NPC that has 0 weapons.
+; Higher values mean ALife prefers this zone over others for
+; that NPC.  Range: any positive float.
+suitable_buyer                 = 50.0
+
+; suitable() score returned for an NPC that carries
+; min_weapons_to_sell or more weapons.
+suitable_seller                = 30.0
+
+; Minimum number of weapons an NPC must carry to be
+; considered a seller candidate.
+min_weapons_to_sell            = 2
+
+; Default sale price (rub) used when no per-item price is set.
+weapon_price                   = 300
+
+; Probability [0..100] that a seller accepts a buy request.
+; 100 = always accept (good for testing).
+; Lower values will be used once the negotiation refusal path
+; is exercised in regression tests.
+accept_chance                  = 100
+
+; FSM tick interval in milliseconds (negotiation step clock).
+negotiation_step_ms            = 2000
+
+; How many FSM steps the buyer waits for the seller's answer
+; before giving up.
+approach_timeout_steps         = 5
+
+; Distance in metres below which buyer is considered to have
+; "arrived" at the seller's position.
+close_enough_m                 = 5.0
+
+; ─── Debug / test parameters ─────────────────────────────────
+[npc_trade_debug]
+
+; Section name used to spawn stalkers in both debug panels.
+; Must be a valid character section in system.ltx / DLTX.
+stalker_section                = stalker_loner
+
+; Item section given to the seller (two copies).
+weapon_section                 = wpn_ak74
+
+; Starting money (rub) given to the buyer.
+buyer_money                    = 500
+
+; Milliseconds to wait after spawn before issuing equipment
+; (allows NPCs to transition to online state).
+setup_delay_ms                 = 2000

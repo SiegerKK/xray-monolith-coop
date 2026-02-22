@@ -31,18 +31,17 @@
 
 -- ─── Конфигурация ─────────────────────────────────────────────────────────────
 
+-- CFG values come from mod_npc_trade.ltx via npc_trade_config.
+-- Only non-configurable layout constants (offsets) stay here.
 local CFG = {
     zone_section   = "debug_trade_zone_test",
-    seller_section = "stalker_loner",
-    buyer_section  = "stalker_loner",
-    weapon_section = "wpn_ak74",
-    buyer_money    = 500,
-    -- Смещения (XZ) от актора при спавне
+    -- Смещения (XZ) от актора при спавне — геометрия, не торговые параметры
     zone_offset    = vector():set( 0, 0,  0),   -- зона прямо у актора
     seller_offset  = vector():set( 5, 0,  3),   -- продавец справа
     buyer_offset   = vector():set(-5, 0, -3),   -- покупатель слева
-    setup_delay_ms = 2000,                      -- задержка после спавна
 }
+
+local function dcfg(key) return npc_trade_config.get_debug(key) end
 
 -- ─── Состояние ────────────────────────────────────────────────────────────────
 
@@ -132,11 +131,11 @@ local function setup_equipment()
         log("ОШИБКА: IDs не заданы"); return
     end
     log("--- Выдаём снаряжение ---")
-    give_item_offline(state.seller_id, CFG.weapon_section)
-    give_item_offline(state.seller_id, CFG.weapon_section)
-    give_money_online(state.buyer_id,  CFG.buyer_money)
+    give_item_offline(state.seller_id, dcfg("weapon_section"))
+    give_item_offline(state.seller_id, dcfg("weapon_section"))
+    give_money_online(state.buyer_id,  dcfg("buyer_money"))
     log("Продавец %d: 2x[%s]  |  Покупатель %d: %d руб.",
-        state.seller_id, CFG.weapon_section, state.buyer_id, CFG.buyer_money)
+        state.seller_id, dcfg("weapon_section"), state.buyer_id, dcfg("buyer_money"))
     log("--- Ждём ALife select_task() ---")
     log("Движок вызовет enabled()/suitable() на следующем тике ALife.")
     log("Следите за строками [TradeZone] в log.txt")
@@ -151,9 +150,9 @@ local function start_test()
     log("Метод: движок вызывает enabled()/suitable() в se_trade_zone")
     log("--- Спавним зону и сталкеров ---")
 
-    state.zone_id   = spawn_at(CFG.zone_section,   CFG.zone_offset)
-    state.seller_id = spawn_at(CFG.seller_section,  CFG.seller_offset)
-    state.buyer_id  = spawn_at(CFG.buyer_section,   CFG.buyer_offset)
+    state.zone_id   = spawn_at(CFG.zone_section,          CFG.zone_offset)
+    state.seller_id = spawn_at(dcfg("stalker_section"),   CFG.seller_offset)
+    state.buyer_id  = spawn_at(dcfg("stalker_section"),   CFG.buyer_offset)
 
     if not (state.zone_id and state.seller_id and state.buyer_id) then
         log("ОШИБКА: спавн не удался, отмена")
@@ -162,8 +161,9 @@ local function start_test()
 
     log("TradeZone=%d  Продавец=%d  Покупатель=%d",
         state.zone_id, state.seller_id, state.buyer_id)
-    log("Ждём %.1fс (переход в онлайн)...", CFG.setup_delay_ms / 1000.0)
-    state.setup_at = time_global() + CFG.setup_delay_ms
+    local delay_ms = dcfg("setup_delay_ms")
+    log("Ждём %.1fс (переход в онлайн)...", delay_ms / 1000.0)
+    state.setup_at = time_global() + delay_ms
 end
 
 local function stop_test()

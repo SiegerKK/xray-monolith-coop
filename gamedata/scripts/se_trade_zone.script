@@ -27,15 +27,14 @@
 
 se_trade_zone = {}
 
--- ─── Constants ───────────────────────────────────────────────────────────────
+-- ─── Config (read from mod_npc_trade.ltx via npc_trade_config) ───────────────
 
--- Priority scores returned by suitable()
-local SUITABLE_BUYER  = 50.0   -- NPC without weapons: strong pull to zone
-local SUITABLE_SELLER = 30.0   -- NPC with 2+ weapons: moderate pull
-local WEAPON_PRICE    = 300
+-- All numeric constants are loaded lazily on first use.
+-- To change them edit gamedata/configs/mod_npc_trade.ltx — no Lua edit needed.
+local function cfg(key)  return npc_trade_config.get(key) end
 
 -- Prefix used to identify weapons in offline inventory checks
-local WEAPON_PREFIX   = "wpn_"
+local WEAPON_PREFIX = "wpn_"
 
 -- ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -95,15 +94,18 @@ end
 ---@param npc_se cse_alife_creature_abstract
 function se_trade_zone:suitable(npc_se)
     if not self:enabled(npc_se) then return 0 end
-    local wc = count_weapons_offline(npc_se)
+    local wc  = count_weapons_offline(npc_se)
+    local min = cfg("min_weapons_to_sell")
     if wc == 0 then
-        Msg("[TradeZone] suitable: npc=%d is BUYER (0 weapons) → %.1f", npc_se.id, SUITABLE_BUYER)
-        return SUITABLE_BUYER
-    elseif wc >= 2 then
-        Msg("[TradeZone] suitable: npc=%d is SELLER (%d weapons) → %.1f", npc_se.id, wc, SUITABLE_SELLER)
-        return SUITABLE_SELLER
+        local score = cfg("suitable_buyer")
+        Msg("[TradeZone] suitable: npc=%d is BUYER (0 weapons) → %.1f", npc_se.id, score)
+        return score
+    elseif wc >= min then
+        local score = cfg("suitable_seller")
+        Msg("[TradeZone] suitable: npc=%d is SELLER (%d weapons) → %.1f", npc_se.id, wc, score)
+        return score
     end
-    -- NPC has exactly 1 weapon — not buyer, not seller: skip
+    -- NPC has weapons but fewer than min_weapons_to_sell: skip
     return 0
 end
 
@@ -185,7 +187,7 @@ function se_trade_zone:_execute_trade(buyer_id, seller_id)
         return
     end
 
-    local ok, msg = npc_trade.sell_item(seller_id, buyer_id, weapon_obj:id(), WEAPON_PRICE)
+    local ok, msg = npc_trade.sell_item(seller_id, buyer_id, weapon_obj:id(), cfg("weapon_price"))
     if ok then
         Msg("[TradeZone] TRADE COMPLETE: %s", msg)
         -- Unregister both so the zone doesn't try again

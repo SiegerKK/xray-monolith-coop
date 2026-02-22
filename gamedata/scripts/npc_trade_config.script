@@ -1,0 +1,169 @@
+-------------------------------------------------------------------------------
+-- npc_trade_config — config reader for the NPC trade system
+-------------------------------------------------------------------------------
+--
+-- Reads parameters from ini_sys (merged system.ltx + all DLTX files) so
+-- that every tunable coefficient lives in mod_npc_trade.ltx rather than in
+-- the Lua scripts.
+--
+-- Usage:
+--   local cfg = npc_trade_config
+--   local price = cfg.get("weapon_price")          -- from [npc_trade]
+--   local wpn   = cfg.get_debug("weapon_section")  -- from [npc_trade_debug]
+--
+-- The functions never throw: if the key is absent in ini_sys the built-in
+-- default is returned and a one-time warning is printed to the log.
+--
+-- Adding a new parameter:
+--   1. Add the key + value to gamedata/configs/mod_npc_trade.ltx
+--   2. Add a default entry to DEFAULTS or DEFAULTS_DEBUG below
+--   3. Call cfg.get("your_key") in the script
+-------------------------------------------------------------------------------
+
+npc_trade_config = {}
+
+-- ─── Sections ────────────────────────────────────────────────────────────────
+
+local SEC_CORE  = "npc_trade"
+local SEC_DEBUG = "npc_trade_debug"
+
+-- ─── Compile-time defaults (fallback if key missing from ltx) ────────────────
+
+local DEFAULTS = {
+    suitable_buyer          = 50.0,
+    suitable_seller         = 30.0,
+    min_weapons_to_sell     = 2,
+    weapon_price            = 300,
+    accept_chance           = 100,
+    negotiation_step_ms     = 2000,
+    approach_timeout_steps  = 5,
+    close_enough_m          = 5.0,
+}
+
+local DEFAULTS_DEBUG = {
+    stalker_section = "stalker_loner",
+    weapon_section  = "wpn_ak74",
+    buyer_money     = 500,
+    setup_delay_ms  = 2000,
+}
+
+-- ─── Helpers ─────────────────────────────────────────────────────────────────
+
+local warned = {}
+
+local function warn_missing(section, key)
+    local full = section .. "." .. key
+    if not warned[full] then
+        warned[full] = true
+        Msg("[npc_trade_config] WARNING: key '%s' not found in [%s] — using built-in default",
+            key, section)
+    end
+end
+
+--- Read a float from ini_sys[section][key]; fallback to default.
+local function r_float(section, key, default)
+    if ini_sys:line_exist(section, key) then
+        return ini_sys:r_float(section, key)
+    end
+    warn_missing(section, key)
+    return default
+end
+
+--- Read an integer from ini_sys[section][key]; fallback to default.
+local function r_int(section, key, default)
+    if ini_sys:line_exist(section, key) then
+        return math.floor(ini_sys:r_float(section, key))
+    end
+    warn_missing(section, key)
+    return default
+end
+
+--- Read a string from ini_sys[section][key]; fallback to default.
+local function r_string(section, key, default)
+    if ini_sys:line_exist(section, key) then
+        return ini_sys:r_string(section, key)
+    end
+    warn_missing(section, key)
+    return default
+end
+
+-- ─── Lazy-loaded config cache ─────────────────────────────────────────────────
+
+local _core  = nil
+local _debug = nil
+
+local function load_core()
+    _core = {
+        suitable_buyer         = r_float (SEC_CORE, "suitable_buyer",         DEFAULTS.suitable_buyer),
+        suitable_seller        = r_float (SEC_CORE, "suitable_seller",        DEFAULTS.suitable_seller),
+        min_weapons_to_sell    = r_int   (SEC_CORE, "min_weapons_to_sell",    DEFAULTS.min_weapons_to_sell),
+        weapon_price           = r_int   (SEC_CORE, "weapon_price",           DEFAULTS.weapon_price),
+        accept_chance          = r_int   (SEC_CORE, "accept_chance",          DEFAULTS.accept_chance),
+        negotiation_step_ms    = r_int   (SEC_CORE, "negotiation_step_ms",    DEFAULTS.negotiation_step_ms),
+        approach_timeout_steps = r_int   (SEC_CORE, "approach_timeout_steps", DEFAULTS.approach_timeout_steps),
+        close_enough_m         = r_float (SEC_CORE, "close_enough_m",         DEFAULTS.close_enough_m),
+    }
+    Msg("[npc_trade_config] core loaded: price=%d accept=%d%% buyer_score=%.1f seller_score=%.1f",
+        _core.weapon_price, _core.accept_chance,
+        _core.suitable_buyer, _core.suitable_seller)
+end
+
+local function load_debug()
+    _debug = {
+        stalker_section = r_string(SEC_DEBUG, "stalker_section", DEFAULTS_DEBUG.stalker_section),
+        weapon_section  = r_string(SEC_DEBUG, "weapon_section",  DEFAULTS_DEBUG.weapon_section),
+        buyer_money     = r_int   (SEC_DEBUG, "buyer_money",     DEFAULTS_DEBUG.buyer_money),
+        setup_delay_ms  = r_int   (SEC_DEBUG, "setup_delay_ms",  DEFAULTS_DEBUG.setup_delay_ms),
+    }
+    Msg("[npc_trade_config] debug loaded: stalker=%s wpn=%s money=%d delay=%dms",
+        _debug.stalker_section, _debug.weapon_section,
+        _debug.buyer_money, _debug.setup_delay_ms)
+end
+
+-- ─── Public API ──────────────────────────────────────────────────────────────
+
+--- Get a core trade parameter.
+---@param key string   One of: suitable_buyer, suitable_seller, min_weapons_to_sell,
+---                             weapon_price, accept_chance, negotiation_step_ms,
+---                             approach_timeout_steps, close_enough_m
+---@return number
+function npc_trade_config.get(key)
+    if not _core then load_core() end
+    local v = _core[key]
+    if v == nil then
+        local def = DEFAULTS[key]
+        if def ~= nil then
+            Msg("[npc_trade_config] ERROR: core key '%s' missing in cache, using default=%s",
+                tostring(key), tostring(def))
+            return def
+        end
+        error(strformat("[npc_trade_config] unknown core key '%s' — add it to mod_npc_trade.ltx and DEFAULTS", key))
+    end
+    return v
+end
+
+--- Get a debug/test parameter.
+---@param key string   One of: stalker_section, weapon_section, buyer_money, setup_delay_ms
+---@return any
+function npc_trade_config.get_debug(key)
+    if not _debug then load_debug() end
+    local v = _debug[key]
+    if v == nil then
+        local def = DEFAULTS_DEBUG[key]
+        if def ~= nil then
+            Msg("[npc_trade_config] ERROR: debug key '%s' missing in cache, using default=%s",
+                tostring(key), tostring(def))
+            return def
+        end
+        error(strformat("[npc_trade_config] unknown debug key '%s' — add it to mod_npc_trade.ltx and DEFAULTS_DEBUG", key))
+    end
+    return v
+end
+
+--- Force reload from ini_sys (useful after hot-patching the ltx via DLTX).
+function npc_trade_config.reload()
+    _core  = nil
+    _debug = nil
+    warned = {}
+    Msg("[npc_trade_config] cache cleared — will reload on next access")
+end
