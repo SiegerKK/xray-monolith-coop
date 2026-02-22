@@ -624,9 +624,320 @@ bool conflicted(const CInventoryItem* current, const CWeapon* new_weapon, ...) {
 
 ---
 
-## 15. Отладка ALife
+## 15. Механика вычисления suitable() — подробный разбор
 
-### 15.1 Сборка с отладкой
+Этот раздел отвечает на вопрос: **как именно НПЦ выбирает цель?** — с точностью до строки кода.
+
+### 15.1 Полный алгоритм select_task()
+
+Файл: `src/xrServerEntities/alife_monster_brain.cpp`
+
+```cpp
+void CALifeMonsterBrain::select_task()
+{
+    // [1] Уже назначена задача — ничего не делаем
+    if (object().m_smart_terrain_id != 0xffff)
+        return;
+
+    // [2] Глобальный флаг: разрешено ли вообще выбирать задачи
+    if (!can_choose_alife_tasks())   // bool m_can_choose_alife_tasks
+        return;
+
+    ALife::_TIME_ID current_time = ai().alife().time_manager().game_time();
+
+    // [3] Таймер: не чаще чем раз в smart_terrain_choose_interval
+    if (m_last_search_time + m_time_interval > current_time)
+        return;
+
+    m_last_search_time = current_time;
+
+    float best_value = flt_min;   // проект-специфичная константа: −FLT_MAX (≈ −∞)
+
+    // [4] Полный перебор ВСЕХ зарегистрированных умных зон
+    for (auto& [id, terrain] : ai().alife().smart_terrains().objects())
+    {
+        // [5] Фильтр: зона должна принять данного НПЦ
+        if (!terrain->enabled(&object()))
+            continue;
+
+        // [6] Оценка: зона возвращает float-балл
+        float value = terrain->suitable(&object());
+
+        // [7] Жадный выбор: берём максимум
+        if (value > best_value) {
+            best_value = value;
+            object().m_smart_terrain_id = terrain->ID;
+        }
+    }
+
+    // [8] Регистрируем НПЦ в выигравшей зоне
+    if (object().m_smart_terrain_id != 0xffff) {
+        smart_terrain().register_npc(&object());
+        m_last_search_time = 0;   // сбрасываем таймер
+    }
+}
+```
+
+**Ключевые выводы из алгоритма:**
+- Это **жадный одношаговый поиск**: обход всех зон за один раз, победитель — сразу.
+- **Нет взвешивания**: расстояние, направление, история не учитываются в базовом коде.
+- **Нет предпочтений по типу задачи**: базовый C++ не знает о «патруле» или «отдыхе».
+- Результат полностью определяется тем, **что вернут `enabled()` и `suitable()`**.
+
+---
+
+### 15.2 Временной интервал перебора
+
+Интервал задаётся в конфигурационном файле `.ltx` для каждого типа существа:
+
+```cpp
+// alife_monster_brain.cpp — конструктор
+u32 hours, minutes, seconds;
+sscanf(
+    pSettings->r_string(object_name, "smart_terrain_choose_interval"),
+    "%d:%d:%d",
+    &hours, &minutes, &seconds
+);
+m_time_interval = generate_time(1, 1, 1, hours, minutes, seconds);
+```
+
+Формат: `smart_terrain_choose_interval = ЧЧ:ММ:СС` (игровое время).  
+Пример: `0:0:30` — НПЦ ищет новую цель раз в 30 игровых секунд.
+
+---
+
+### 15.3 Что такое enabled() и suitable()
+
+Оба метода объявлены как виртуальные в базовом классе `CSE_ALifeSmartZone`:
+
+```cpp
+// xrServer_Objects_ALife.h
+SERVER_ENTITY_DECLARE_BEGIN2(CSE_ALifeSmartZone,
+    CSE_ALifeSpaceRestrictor, CSE_ALifeSchedulable)
+
+    // Фильтр: может ли этот НПЦ вообще взять задачу в этой зоне?
+    virtual bool  enabled (CSE_ALifeMonsterAbstract* object) const { return false; }
+
+    // Оценка: насколько эта зона подходит для данного НПЦ?
+    virtual float suitable(CSE_ALifeMonsterAbstract* object) const { return 0.f; }
+
+    // Регистрация / снятие НПЦ с задачи
+    virtual void register_npc  (CSE_ALifeMonsterAbstract* object) {}
+    virtual void unregister_npc(CSE_ALifeMonsterAbstract* object) {}
+
+    // Возвращает конкретную точку назначения (patrol path + vertex id)
+    virtual CALifeSmartTerrainTask* task(CSE_ALifeMonsterAbstract* object) { return 0; }
+
+SERVER_ENTITY_DECLARE_END
+```
+
+**Значения по умолчанию — `false` и `0.f`**, то есть базовый C++ отключает все умные зоны.  
+Реальная логика **переопределяется в подклассах или через Lua**.
+
+---
+
+### 15.4 Lua-перекрытие suitable() и enabled()
+
+Макрос `INHERIT_ZONE` в `xrServer_script_macroses.h` оборачивает все методы зоны в Lua-диспетчеры:
+
+```cpp
+#define INHERIT_ZONE \
+    DEFINE_LUA_WRAPPER_CONST_METHOD_1(enabled,  bool,  CSE_ALifeMonsterAbstract*) \
+    DEFINE_LUA_WRAPPER_CONST_METHOD_1(suitable, float, CSE_ALifeMonsterAbstract*) \
+    DEFINE_LUA_WRAPPER_METHOD_V1(register_npc,         CSE_ALifeMonsterAbstract*) \
+    DEFINE_LUA_WRAPPER_METHOD_V1(unregister_npc,       CSE_ALifeMonsterAbstract*) \
+    DEFINE_LUA_WRAPPER_METHOD_1 (task, CALifeSmartTerrainTask*, CSE_ALifeMonsterAbstract*)
+```
+
+Класс зарегистрирован в Lua как `cse_alife_smart_zone`:
+
+```cpp
+// xrServer_Objects_ALife_script3.cpp
+module(L) [
+    luabind_class_zone2(
+        CSE_ALifeSmartZone,
+        "cse_alife_smart_zone",
+        CSE_ALifeSpaceRestrictor,
+        CSE_ALifeSchedulable
+    )
+];
+```
+
+**Это означает:** в игровых модах/скриптах можно написать Lua-класс, наследующий `cse_alife_smart_zone`, и переопределить `suitable(npc)` так, чтобы возвращать нужный балл на основе **любых** параметров НПЦ.
+
+---
+
+### 15.5 Что можно учитывать в suitable()
+
+Через объект `CSE_ALifeMonsterAbstract* object` Lua/C++ код внутри `suitable()` имеет доступ к:
+
+| Поле | Тип | Что это |
+|---|---|---|
+| `object.fHealth` | float | Здоровье (0–1) |
+| `object.m_fMorale` | float | Боевой дух |
+| `object.m_fAccuracy` | float | Точность |
+| `object.m_fIntelligence` | float | Интеллект |
+| `object.m_fEyeRange` | float | Радиус обзора |
+| `object.m_rank` | u16 | Ранг НПЦ |
+| `object.m_group` | u16 | Номер группы |
+| `object.m_smart_terrain_id` | u16 | Текущая задача (0xffff = нет) |
+| `object.m_tGraphID` | `_GRAPH_ID` | Вершина game graph (позиция) |
+| `object.fid` | — | ID фракции (community) |
+
+Для людей (`CSE_ALifeHumanAbstract`) дополнительно:
+- `brain().m_cpEquipmentPreferences` — предпочтения снаряжения
+- `brain().m_cpMainWeaponPreferences` — предпочтения оружия
+- `brain().m_dwTotalMoney` — деньги
+
+**Пример того, что может делать suitable() в реальной игре:**
+
+```lua
+-- Псевдокод (не из этого репозитория, иллюстрация принципа)
+function smart_terrain:suitable(npc)
+    -- Фильтры по рангу
+    if npc:rank() < self.min_rank then return 0 end
+    if npc:rank() > self.max_rank then return 0 end
+
+    -- Фильтр по фракции
+    if not self:community_allowed(npc:community()) then return 0 end
+
+    -- Базовый балл за тип задачи (патруль важнее отдыха)
+    local base = self.job_priority  -- например, 10 для патруля, 5 для отдыха
+
+    -- Штраф за расстояние
+    local dist = distance_between(npc, self)
+    local dist_penalty = dist * 0.01  -- чем дальше — тем меньше балл
+
+    return base - dist_penalty
+end
+```
+
+---
+
+### 15.6 Как online-сталкер триггерит select_task()
+
+Для активного (online) сталкера `select_task()` вызывается не напрямую, а через **GOAP-оценщик**:
+
+```cpp
+// stalker_property_evaluators.cpp
+_value_type CStalkerPropertyEvaluatorSmartTerrainTask::evaluate()
+{
+    if (!ai().get_alife()) return false;
+
+    CSE_ALifeHumanAbstract* stalker =
+        smart_cast<CSE_ALifeHumanAbstract*>(
+            ai().alife().objects().object(m_object->ID(), true)
+        );
+    if (!stalker) return false;
+
+    stalker->brain().select_task();  // ← вызывает тот же алгоритм
+    return (stalker->m_smart_terrain_id != 0xffff);
+}
+```
+
+Этот оценщик зарегистрирован как `eWorldPropertySmartTerrainTask` в `CStalkerALifePlanner::add_evaluators()` — GOAP-планировщик запрашивает его каждый раз, когда строит план действий для сталкера.
+
+---
+
+### 15.7 Что происходит после выбора цели
+
+Когда `m_smart_terrain_id` установлен, `CStalkerActionSmartTerrain::execute()` выполняет навигацию:
+
+```cpp
+// stalker_alife_task_actions.cpp
+void CStalkerActionSmartTerrain::execute()
+{
+    // Получаем задачу от умной зоны
+    CALifeSmartTerrainTask* task = stalker->brain().smart_terrain().task(stalker);
+
+    // Навигация между уровнями через game graph
+    if (object().ai_location().game_vertex_id() != task->game_vertex_id()) {
+        object().movement().set_path_type(MovementManager::ePathTypeGamePath);
+        object().movement().set_game_dest_vertex(task->game_vertex_id());
+        return;
+    }
+
+    // Навигация внутри уровня через level graph
+    object().movement().set_path_type(MovementManager::ePathTypeLevelPath);
+    if (object().movement().accessible(task->level_vertex_id())) {
+        object().movement().set_level_dest_vertex(task->level_vertex_id());
+        Fvector pos = task->position();
+        object().movement().set_desired_position(&pos);
+        return;
+    }
+
+    // Если точка недоступна — идём к ближайшей доступной
+    object().movement().set_nearest_accessible_position(
+        task->position(), task->level_vertex_id());
+}
+```
+
+`CALifeSmartTerrainTask` содержит:
+- `game_vertex_id()` — вершина game graph (для межуровневой навигации)
+- `level_vertex_id()` — вершина level graph (для навигации внутри уровня)
+- `position()` — точная 3D-координата на уровне
+
+---
+
+### 15.8 Полная цепочка целеполагания
+
+```
+НПЦ создан → spawn_supplies() → m_smart_terrain_id = 0xffff (нет задачи)
+│
+▼
+brain().update() каждый ALife-тик:
+│
+├── can_choose_alife_tasks() == true?
+├── прошёл smart_terrain_choose_interval?
+│
+└── select_task():
+    │
+    ├── [перебор всех CSE_ALifeSmartZone]
+    │   │
+    │   ├── enabled(npc) == false? → skip
+    │   │
+    │   └── value = suitable(npc)     ← float, логика в Lua или C++ подклассе
+    │       │
+    │       │   Может учитывать:
+    │       │   • ранг НПЦ (m_rank)
+    │       │   • фракцию (community)
+    │       │   • здоровье (fHealth)
+    │       │   • расстояние до зоны (m_tGraphID)
+    │       │   • текущую загруженность зоны
+    │       │   • приоритет типа задачи (patrol > guard > rest)
+    │       │
+    │       └── if (value > best) → best_terrain = эта зона
+    │
+    └── m_smart_terrain_id = best_terrain.ID
+        register_npc(npc) → зона сохраняет НПЦ у себя
+        │
+        ▼
+    process_task() / CStalkerActionSmartTerrain::execute():
+        task() → CALifeSmartTerrainTask (game_vertex + level_vertex + position)
+        НПЦ навигирует к точке назначения
+        по достижении: m_task_reached = true → выполнение задачи (патруль/охрана/etc.)
+```
+
+---
+
+### 15.9 Итог: что определяет цель НПЦ
+
+| Фактор | Где задаётся | Влияет на |
+|---|---|---|
+| Временной интервал поиска | `.ltx`: `smart_terrain_choose_interval` | Как часто НПЦ ищет новую цель |
+| Разрешение поиска | `can_choose_alife_tasks` (bool-флаг) | Может ли НПЦ вообще выбирать цели |
+| Фильтрация зон | `enabled(npc)` — виртуальный метод | Какие зоны попадают на рассмотрение |
+| Оценка зон | `suitable(npc)` — виртуальный метод | Какая зона получит наивысший балл |
+| Логика suitable() | Lua-скрипт или C++ подкласс | Реальные правила (ранг, фракция, дистанция, тип задачи) |
+| Навигация к цели | `CALifeSmartTerrainTask` | Точная 3D-координата и путь к ней |
+
+**Вывод:** «Случайности» в целеполагании нет. Каждая умная зона сама решает, кого принять и с каким баллом. Движок предоставляет инфраструктуру (жадный выбор максимума), а конкретная бизнес-логика (патруль важнее отдыха, сталкеры определённого ранга идут в определённые места) реализуется в `suitable()` через Lua-скрипты или C++-подклассы.
+
+---
+
+## 16. Отладка ALife
+
+### 16.1 Сборка с отладкой
 
 Все debug-инструменты спрятаны за препроцессорным флагом `#ifdef DEBUG`. Чтобы они были доступны, нужно **собрать проект в Debug-конфигурации** (Visual Studio: конфигурация `Debug`; препроцессорный символ `DEBUG`, определяется через `/D DEBUG` или `/DDEBUG` — стандартный MSVC-синтаксис). В Release-сборках консольные команды `ai_draw_*` и детальные лог-блоки отсутствуют.
 
@@ -638,7 +949,7 @@ bool conflicted(const CInventoryItem* current, const CWeapon* new_weapon, ...) {
 
 ---
 
-### 15.2 Флаги отладки AI (`psAI_Flags`)
+### 16.2 Флаги отладки AI (`psAI_Flags`)
 
 Все флаги определены в `src/xrGame/ai_debug.h` и управляются битовым полем `psAI_Flags`:
 
@@ -666,7 +977,7 @@ bool conflicted(const CInventoryItem* current, const CWeapon* new_weapon, ...) {
 
 ---
 
-### 15.3 Консольные команды
+### 16.3 Консольные команды
 
 #### Основные ALife-команды
 
@@ -701,7 +1012,7 @@ ai_use_smart_covers 1   // включить/выключить smart covers
 
 ---
 
-### 15.4 Цветовое кодирование game graph
+### 16.4 Цветовое кодирование game graph
 
 `CLevelGraph::render()` в `level_graph_debug.cpp` (весь файл — только `#ifdef DEBUG`) рисует:
 
@@ -715,7 +1026,7 @@ ai_use_smart_covers 1   // включить/выключить smart covers
 
 ---
 
-### 15.5 Логи ALife в консоли
+### 16.5 Логи ALife в консоли
 
 Даже в Release-сборке ряд событий выводится через `Msg()`:
 
@@ -739,7 +1050,7 @@ ai_use_smart_covers 1   // включить/выключить smart covers
 
 ---
 
-### 15.6 GOAP-планировщик: отладка решений
+### 16.6 GOAP-планировщик: отладка решений
 
 При включённом `ai_dbg_goap 1` (и сборке с `#ifdef LOG_ACTION`):
 
@@ -757,7 +1068,7 @@ Msg("%s", action2string(solution()[i]));
 
 ---
 
-### 15.7 ПДА: что видно про НПЦ
+### 16.7 ПДА: что видно про НПЦ
 
 **PDA-интерфейс** (`UIPdaWnd`) содержит вкладки:
 
@@ -773,7 +1084,7 @@ Msg("%s", action2string(solution()[i]));
 
 ---
 
-### 15.8 Настройка параметров ALife (ltx/конфиги)
+### 16.8 Настройка параметров ALife (ltx/конфиги)
 
 Основные параметры ALife задаются в C++-коде через методы симулятора:
 
@@ -789,7 +1100,7 @@ alife().set_switch_factor(factor);       // коэффициент перекл�
 
 ---
 
-### 15.9 Быстрый старт отладки ALife
+### 16.9 Быстрый старт отладки ALife
 
 ```
 # 1. Собрать в Debug-конфигурации (Visual Studio → Debug)
@@ -837,4 +1148,7 @@ ai_draw_game_graph_objects 1
 | `level_graph_debug.cpp` | `src/xrGame/` |
 | `alife_interaction_manager.cpp` | `src/xrGame/` |
 | `action_planner_inline.h` | `src/xrGame/` |
-| `ui/UIPdaWnd.h/.cpp` | `src/xrGame/` |
+| `stalker_property_evaluators.cpp` | `src/xrGame/` |
+| `alife_monster_brain_inline.h` | `src/xrServerEntities/` |
+| `xrServer_script_macroses.h` | `src/xrServerEntities/` |
+| `xrServer_Objects_ALife_script3.cpp` | `src/xrServerEntities/` |
