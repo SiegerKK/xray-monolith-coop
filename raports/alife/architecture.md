@@ -1245,37 +1245,93 @@ end)
 
 ### 17.5 Структура реализованной механики
 
-Два файла реализуют полный цикл «механика + дебаг»:
+Четыре файла реализуют полный стек «протокол → механика → тест → дебаг-панель»:
 
-#### `gamedata/scripts/npc_trade.script` — ядро механики
+#### `gamedata/scripts/npc_trade.script` — базовый API обмена
 
 ```lua
--- Публичный API модуля npc_trade
-npc_trade.get_balance(npc_id)                         → number
-npc_trade.list_inventory(npc_id)                      → { {section, id}, ... }
-npc_trade.sell_item(seller_id, buyer_id, item_id, price)  → ok, msg
-npc_trade.demo_trade(npc_a_id, npc_b_id, price)           → ok, msg
+npc_trade.get_balance(npc_id)                              → number
+npc_trade.list_inventory(npc_id)                           → { {section, id}, ... }
+npc_trade.sell_item(seller_id, buyer_id, item_id, price)   → ok, msg
+npc_trade.demo_trade(npc_a_id, npc_b_id, price)            → ok, msg
 ```
 
-Логика `sell_item`:
-1. Найти онлайн-объекты продавца, покупателя и предмета
-2. Проверить, что предмет в инвентаре продавца (`iterate_inventory`)
-3. Проверить баланс покупателя
-4. `buyer:transfer_money(price, seller)` — деньги к продавцу
-5. `seller:transfer_item(item, buyer)` — предмет к покупателю
+Логика `sell_item`: проверить инвентарь → проверить баланс →
+`buyer:transfer_money(price, seller)` → `seller:transfer_item(item, buyer)`.
 
-#### `gamedata/scripts/debug_npc_trade.script` — ImGui дебаг-панель
+#### `gamedata/scripts/npc_trade_negotiation.script` — FSM переговоров
 
-Регистрируется в `ImGui.Groups.Debug` под названием «NPC Trade».  
-Открывается: **F7 → (второй раз F7 для ввода) → Debug → NPC Trade**.
+Реализует протокол из 9 шагов для покупателя и 6 для продавца.
 
-Панель содержит:
-- Поля ввода ID продавца, покупателя, цены
-- Кнопку **Refresh** — обновляет инвентари и балансы
-- Список инвентаря продавца (кликабельный)
-- Кнопку **Sell Selected Item** — продать выбранный предмет
-- Кнопку **Demo Trade** — авто-сделка первым предметом в инвентаре
-- Прокручиваемый лог последних 12 операций
+**Покупатель (Stalker_2):**
+```
+idle → checking_inventory → needs_weapon → found_seller
+     → sent_request → waiting_response → approaching → arrived → done
+```
+
+**Продавец (Stalker_1):**
+```
+idle → received_request → reviewing → responded → waiting_buyer → sold
+```
+
+Ключевые правила:
+- Продавец принимает/отклоняет с вероятностью 80/20 (`ACCEPT_CHANCE`)
+- Покупатель вызывает `set_desired_position(seller:position())` и идёт к продавцу
+- Переход «arrived» происходит по условию `distance_to <= 5m` или по таймауту (5 шагов)
+- Финальный обмен через `npc_trade.sell_item()`
+
+**Публичный API:**
+```lua
+npc_trade_negotiation.start(buyer_id, seller_id)  -- запустить сессию
+npc_trade_negotiation.update()                    -- обновить FSM (вызывать из AddUniqueCall)
+npc_trade_negotiation.get_sessions()              → table  -- все активные сессии
+npc_trade_negotiation.buyer_state(session)        → string -- текущее состояние покупателя
+npc_trade_negotiation.seller_state(session)       → string -- текущее состояние продавца
+npc_trade_negotiation.clear()                     -- сбросить все сессии
+```
+
+#### `gamedata/scripts/debug_trade_scenario.script` — тест-сценарий
+
+Спавнит двух сталкеров, выдаёт снаряжение и запускает переговоры.
+
+Открыть: **F7 → F7 → Debug → NPC Trade Scenario**.
+
+Что происходит после нажатия «Запустить сценарий»:
+1. `alife():create("stalker_bandit", pos, lv, gv)` — спавн продавца (+3м от актора)
+2. `alife():create("stalker_bandit", pos, lv, gv)` — спавн покупателя (−3м от актора)
+3. Через 2 секунды (ожидание перехода в онлайн): `alife():create(weapon, pos, lv, gv, seller_id)` × 2 + `buyer:give_money(500)`
+4. `npc_trade_negotiation.start(buyer_id, seller_id)` — запуск FSM
+5. `AddUniqueCall` → `npc_trade_negotiation.update()` каждые 2 секунды реального времени
+6. Все события: `Msg()` в log.txt + ImGui-лог
+
+Пример лога в log.txt:
+```
+[SCENARIO] Spawned [stalker_bandit] id=1234 pos=(150.3, 0.0, 200.1)
+[SCENARIO] Spawned [stalker_bandit] id=1235 pos=(144.3, 0.0, 200.1)
+[SCENARIO]   + item [wpn_ak74] id=1236 → npc 1234
+[SCENARIO]   + item [wpn_ak74] id=1237 → npc 1234
+[TRADE]    Stalker_1235: нет оружия! Ищу торговца поблизости...
+[TRADE]    Stalker_1235: нашёл торговца Stalker_1234 (оружий: 2, дистанция: 6.0m)
+[TRADE]    Stalker_1234: рассматриваю запрос... ПРИНЯТЬ (45/100 <= 80% шанс)
+[TRADE]    Stalker_1235: приближаюсь к Stalker_1234... 3.2m
+[TRADE]    [СДЕЛКА ЗАВЕРШЕНА] Stalker_1235 купил 'wpn_ak74' у Stalker_1234 за 300 руб.
+[TRADE]      Баланс: покупатель=200 руб | продавец=300 руб
+```
+
+**Настройка секций** (в начале файла):
+```lua
+local CFG = {
+    seller_section = "stalker_bandit",  -- секция для alife():create()
+    buyer_section  = "stalker_bandit",
+    weapon_section = "wpn_ak74",        -- подобрать под контент
+    buyer_money    = 500,
+}
+```
+
+#### `gamedata/scripts/debug_npc_trade.script` — ручная дебаг-панель
+
+Регистрируется под «NPC Trade» в меню Debug.  
+Позволяет вручную указывать ID объектов и исполнять разовые сделки (без FSM).
 
 ---
 
@@ -1318,5 +1374,7 @@ npc_trade.demo_trade(npc_a_id, npc_b_id, price)           → ok, msg
 | `src/xrGame/script_game_object_script3.cpp` | `transfer_item`, `transfer_money`, `money`, `iterate_inventory` |
 | `src/xrGame/InventoryOwner_script.cpp` | `get_money`, `EnableTrade` |
 | `src/xrGame/script_game_object_inventory_owner.cpp` | Реализация `TransferItem`, `TransferMoney` |
-| `gamedata/scripts/npc_trade.script` | **Ядро механики NPC-торговли** |
-| `gamedata/scripts/debug_npc_trade.script` | **ImGui дебаг-панель для тестирования** |
+| `gamedata/scripts/npc_trade.script` | **Базовый API: передача предметов и денег** |
+| `gamedata/scripts/npc_trade_negotiation.script` | **FSM переговоров: протокол покупатель↔продавец** |
+| `gamedata/scripts/debug_trade_scenario.script` | **Тест-сценарий: спавн + снаряжение + ImGui-панель** |
+| `gamedata/scripts/debug_npc_trade.script` | **Ручная дебаг-панель для разовых сделок** |

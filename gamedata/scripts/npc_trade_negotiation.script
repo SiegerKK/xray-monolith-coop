@@ -1,0 +1,332 @@
+-------------------------------------------------------------------------------
+-- NPC Trade Negotiation
+-- Конечный автомат (FSM) переговоров о покупке оружия между двумя НПЦ
+-------------------------------------------------------------------------------
+--
+-- Реализует протокол из 9 шагов для покупателя и 6 шагов для продавца:
+--
+--   ПОКУПАТЕЛЬ (Stalker_2):
+--     idle → checking_inventory → needs_weapon → found_seller
+--     → sent_request → waiting_response → approaching → arrived → done
+--
+--   ПРОДАВЕЦ (Stalker_1):
+--     idle → received_request → reviewing → accepted/declined
+--     → waiting_buyer → sold
+--
+-- Все события пишутся в Msg() (log.txt) и доступны через get_sessions().
+--
+-- Зависимости: npc_trade.script (для финального transfer_item/money)
+-------------------------------------------------------------------------------
+
+npc_trade_negotiation = {}
+
+-- ─── Конфигурация ────────────────────────────────────────────────────────────
+
+-- Интервал между шагами автомата (мс реального времени)
+local STEP_MS         = 2000
+-- Таймаут ожидания подхода покупателя (шагов)
+local APPROACH_TIMEOUT = 5
+-- Дистанция «подошёл достаточно близко» (метры)
+local CLOSE_ENOUGH_M  = 5.0
+-- Цена оружия
+local WEAPON_PRICE    = 300
+-- Шанс согласия продавца (0–100)
+local ACCEPT_CHANCE   = 80
+
+-- ─── Состояния ───────────────────────────────────────────────────────────────
+
+local BUYER_STATES = {
+    "idle",
+    "checking_inventory",
+    "needs_weapon",
+    "found_seller",
+    "sent_request",
+    "waiting_response",
+    "approaching",
+    "arrived",
+    "done",
+}
+
+local SELLER_STATES = {
+    "idle",
+    "received_request",
+    "reviewing",
+    "responded",
+    "waiting_buyer",
+    "sold",
+}
+
+-- ─── Внутренние функции ──────────────────────────────────────────────────────
+
+local sessions = {}
+
+local function tlog(session, msg)
+    local line = strformat("[TRADE] %s", msg)
+    table.insert(session.log, line)
+    Msg(line)
+end
+
+--- Посчитать оружия в инвентаре онлайн-объекта.
+local function count_weapons(npc_id)
+    local obj = level and level.object_by_id(npc_id)
+    if not obj then return 0 end
+    local count = 0
+    obj:iterate_inventory(function(_, item)
+        if item then
+            local sec = item:section() or ""
+            if sec:sub(1, 4) == "wpn_" then
+                count = count + 1
+            end
+        end
+    end, obj)
+    return count
+end
+
+--- Найти первое оружие в инвентаре онлайн-объекта.
+--- @return game_object|nil
+local function find_first_weapon(npc_id)
+    local obj = level and level.object_by_id(npc_id)
+    if not obj then return nil end
+    local found = nil
+    obj:iterate_inventory(function(_, item)
+        if not found and item then
+            local sec = item:section() or ""
+            if sec:sub(1, 4) == "wpn_" then
+                found = item
+            end
+        end
+    end, obj)
+    return found
+end
+
+--- Дистанция между двумя онлайн-объектами (метры).
+local function dist_between(id_a, id_b)
+    local a = level and level.object_by_id(id_a)
+    local b = level and level.object_by_id(id_b)
+    if not a or not b then return 9999 end
+    return a:position():distance_to(b:position())
+end
+
+-- ─── Шаги покупателя ─────────────────────────────────────────────────────────
+
+local function buyer_step(s)
+    local buyer_state  = BUYER_STATES[s.buyer_si] or "done"
+    local buyer  = level and level.object_by_id(s.buyer_id)
+    local seller = level and level.object_by_id(s.seller_id)
+
+    if buyer_state == "idle" then
+        tlog(s, strformat("Stalker_%d: начинаю инвентаризацию снаряжения", s.buyer_id))
+        s.buyer_si = s.buyer_si + 1
+
+    elseif buyer_state == "checking_inventory" then
+        local wc = count_weapons(s.buyer_id)
+        tlog(s, strformat("Stalker_%d: оружий в инвентаре — %d", s.buyer_id, wc))
+        s.buyer_si = s.buyer_si + 1
+
+    elseif buyer_state == "needs_weapon" then
+        if count_weapons(s.buyer_id) > 0 then
+            tlog(s, strformat("Stalker_%d: оружие уже есть, торговля не нужна", s.buyer_id))
+            s.done = true
+            return
+        end
+        tlog(s, strformat("Stalker_%d: нет оружия! Ищу торговца поблизости...", s.buyer_id))
+        s.buyer_si = s.buyer_si + 1
+
+    elseif buyer_state == "found_seller" then
+        local wc_seller = count_weapons(s.seller_id)
+        local dist      = dist_between(s.buyer_id, s.seller_id)
+        if wc_seller == 0 then
+            tlog(s, strformat("Stalker_%d: у Stalker_%d нет оружия. Сделка невозможна.",
+                s.buyer_id, s.seller_id))
+            s.done = true
+            return
+        end
+        tlog(s, strformat(
+            "Stalker_%d: нашёл торговца Stalker_%d (оружий: %d, дистанция: %.1fm) — отправляю запрос",
+            s.buyer_id, s.seller_id, wc_seller, dist))
+        s.buyer_si  = s.buyer_si + 1
+        s.seller_si = 2  -- переводим продавца в "received_request"
+
+    elseif buyer_state == "sent_request" then
+        local balance = buyer and buyer:money() or 0
+        tlog(s, strformat(
+            "Stalker_%d: запрос отправлен Stalker_%d. Мой бюджет: %d руб.",
+            s.buyer_id, s.seller_id, balance))
+        s.buyer_si = s.buyer_si + 1
+
+    elseif buyer_state == "waiting_response" then
+        if s.accepted == nil then
+            -- продавец ещё не принял решение — не двигаемся
+            tlog(s, strformat("Stalker_%d: жду ответа от Stalker_%d...",
+                s.buyer_id, s.seller_id))
+            return
+        elseif s.accepted then
+            tlog(s, strformat(
+                "Stalker_%d: Stalker_%d СОГЛАСИЛСЯ! Иду к нему.",
+                s.buyer_id, s.seller_id))
+            -- Направляем покупателя к продавцу
+            if buyer and seller then
+                buyer:set_desired_position(seller:position())
+            end
+            s.approach_steps = 0
+            s.buyer_si = s.buyer_si + 1
+        else
+            tlog(s, strformat(
+                "Stalker_%d: Stalker_%d ОТКАЗАЛ. Ищу другого продавца.",
+                s.buyer_id, s.seller_id))
+            s.done = true
+        end
+        return  -- не поднимаем si безусловно
+
+    elseif buyer_state == "approaching" then
+        local dist = dist_between(s.buyer_id, s.seller_id)
+        s.approach_steps = (s.approach_steps or 0) + 1
+        tlog(s, strformat("Stalker_%d: приближаюсь к Stalker_%d... %.1fm",
+            s.buyer_id, s.seller_id, dist))
+        -- Пробуем ещё раз выставить цель (движок мог сбросить)
+        if buyer and seller then
+            buyer:set_desired_position(seller:position())
+        end
+        -- Переходим вперёд когда подошли ИЛИ по таймауту
+        if dist <= CLOSE_ENOUGH_M or s.approach_steps >= APPROACH_TIMEOUT then
+            if dist > CLOSE_ENOUGH_M then
+                tlog(s, strformat("Stalker_%d: (таймаут подхода, расстояние %.1fm — принудительный переход)",
+                    s.buyer_id, dist))
+            end
+            s.buyer_si = s.buyer_si + 1
+        end
+        return  -- не поднимаем si безусловно
+
+    elseif buyer_state == "arrived" then
+        tlog(s, strformat("Stalker_%d: подошёл к Stalker_%d. Выполняю сделку.",
+            s.buyer_id, s.seller_id))
+        -- Снимаем цель движения
+        if buyer then buyer:set_desired_position() end
+        -- Ищем оружие у продавца
+        local weapon = find_first_weapon(s.seller_id)
+        if not weapon then
+            tlog(s, strformat("Stalker_%d: у продавца не осталось оружия!", s.buyer_id))
+            s.done = true
+            return
+        end
+        s.item_id = weapon:id()
+        local ok, msg = npc_trade.sell_item(s.seller_id, s.buyer_id, s.item_id, WEAPON_PRICE)
+        if ok then
+            local b_bal = buyer  and buyer:money()  or 0
+            local s_bal = seller and seller:money() or 0
+            tlog(s, strformat("[СДЕЛКА ЗАВЕРШЕНА] Stalker_%d купил '%s' у Stalker_%d за %d руб.",
+                s.buyer_id, weapon:section(), s.seller_id, WEAPON_PRICE))
+            tlog(s, strformat("  Баланс: покупатель=%d руб | продавец=%d руб", b_bal, s_bal))
+            tlog(s, strformat("  Оружий у покупателя теперь: %d", count_weapons(s.buyer_id)))
+        else
+            tlog(s, strformat("[ОШИБКА СДЕЛКИ] %s", msg))
+        end
+        s.buyer_si = s.buyer_si + 1
+        s.done = true
+
+    elseif buyer_state == "done" then
+        s.done = true
+    end
+end
+
+-- ─── Шаги продавца ───────────────────────────────────────────────────────────
+
+local function seller_step(s)
+    local seller_state = SELLER_STATES[s.seller_si] or "sold"
+
+    if seller_state == "idle" then
+        return  -- ждём запроса
+
+    elseif seller_state == "received_request" then
+        tlog(s, strformat("Stalker_%d: получил запрос на покупку оружия от Stalker_%d",
+            s.seller_id, s.buyer_id))
+        s.seller_si = s.seller_si + 1
+
+    elseif seller_state == "reviewing" then
+        local roll = math.random(1, 100)
+        s.accepted = (roll <= ACCEPT_CHANCE)
+        if s.accepted then
+            tlog(s, strformat(
+                "Stalker_%d: рассматриваю запрос... ПРИНЯТЬ (%d/100 <= %d%% шанс)",
+                s.seller_id, roll, ACCEPT_CHANCE))
+        else
+            tlog(s, strformat(
+                "Stalker_%d: рассматриваю запрос... ОТКАЗАТЬ (%d/100 > %d%% шанс)",
+                s.seller_id, roll, ACCEPT_CHANCE))
+        end
+        s.seller_si = s.seller_si + 1
+
+    elseif seller_state == "responded" then
+        if s.accepted then
+            tlog(s, strformat("Stalker_%d: жду когда Stalker_%d подойдёт...",
+                s.seller_id, s.buyer_id))
+            s.seller_si = s.seller_si + 1
+        else
+            s.seller_si = s.seller_si + 1
+        end
+
+    elseif seller_state == "waiting_buyer" then
+        return  -- ждём подхода
+
+    elseif seller_state == "sold" then
+        return
+    end
+end
+
+-- ─── Публичный API ───────────────────────────────────────────────────────────
+
+--- Запустить сессию переговоров.
+--- @param buyer_id  number  ID покупателя (НПЦ без оружия)
+--- @param seller_id number  ID продавца (НПЦ с оружием)
+function npc_trade_negotiation.start(buyer_id, seller_id)
+    if sessions[buyer_id] then
+        Msg("[TRADE] Сессия для покупателя %d уже существует", buyer_id)
+        return
+    end
+    sessions[buyer_id] = {
+        buyer_id       = buyer_id,
+        seller_id      = seller_id,
+        item_id        = nil,
+        buyer_si       = 1,
+        seller_si      = 1,
+        last_step_ms   = time_global(),
+        accepted       = nil,
+        approach_steps = 0,
+        log            = {},
+        done           = false,
+    }
+    Msg("[TRADE] Сессия запущена: покупатель=%d продавец=%d", buyer_id, seller_id)
+end
+
+--- Обновить все активные сессии (вызывать из AddUniqueCall или actor_on_update).
+function npc_trade_negotiation.update()
+    local now = time_global()
+    for _, s in pairs(sessions) do
+        if not s.done and (now - s.last_step_ms) >= STEP_MS then
+            s.last_step_ms = now
+            seller_step(s)
+            buyer_step(s)
+        end
+    end
+end
+
+--- Получить таблицу всех сессий (для ImGui-отображения).
+function npc_trade_negotiation.get_sessions()
+    return sessions
+end
+
+--- Имя текущего состояния покупателя.
+function npc_trade_negotiation.buyer_state(s)
+    return BUYER_STATES[s.buyer_si] or "done"
+end
+
+--- Имя текущего состояния продавца.
+function npc_trade_negotiation.seller_state(s)
+    return SELLER_STATES[s.seller_si] or "sold"
+end
+
+--- Сбросить все сессии (очищает таблицу без замены ссылки).
+function npc_trade_negotiation.clear()
+    for k in pairs(sessions) do sessions[k] = nil end
+    Msg("[TRADE] Все сессии очищены")
+end

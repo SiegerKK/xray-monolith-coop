@@ -1,0 +1,317 @@
+-------------------------------------------------------------------------------
+-- NPC Trade — Spawn Scenario
+-- Тест-сценарий: спавн 2 сталкеров с заданным снаряжением + переговоры
+-------------------------------------------------------------------------------
+--
+-- Сценарий:
+--   Stalker_1 (продавец): 2 оружия, денег нет
+--   Stalker_2 (покупатель): 0 оружий, 500 руб.
+--
+--   Stalker_2 замечает отсутствие оружия → находит Stalker_1 →
+--   отправляет запрос на покупку → Stalker_1 рассматривает (80% согласие) →
+--   если согласен: Stalker_2 подходит и покупает оружие за 300 руб.
+--
+-- Открыть панель: F7 → F7 (захват ввода) → Debug → NPC Trade Scenario
+--
+-- Настройка секций:
+--   SELLER_SECTION / BUYER_SECTION  — секции для alife():create()
+--   WEAPON_SECTION                  — секция оружия из configs/
+--   Подбирайте секции под установленный контент.
+--
+-- Зависимости: npc_trade.script, npc_trade_negotiation.script, _imgui_groups.script
+-------------------------------------------------------------------------------
+
+-- ─── Конфигурация ─────────────────────────────────────────────────────────────
+
+local CFG = {
+    seller_section = "stalker_bandit",   -- секция для alife():create(section,...)
+    buyer_section  = "stalker_bandit",
+    weapon_section = "wpn_ak74",         -- оружие (2 штуки продавцу)
+    buyer_money    = 500,                -- руб. покупателю
+    -- Смещения по XZ-плоскости от актора. Корректируйте при необходимости,
+    -- если NPC спавнятся внутри стен.
+    seller_offset  = vector():set( 3, 0,  2),  -- смещение продавца от актора
+    buyer_offset   = vector():set(-3, 0, -2),  -- смещение покупателя от актора
+    -- Задержка выдачи снаряжения после спавна (мс).
+    -- NPC требуется время для перехода в онлайн — без задержки give_money
+    -- вернёт "объект ещё оффлайн", а create с parent_id не найдёт game_object.
+    setup_delay_ms = 2000,
+}
+
+-- ─── Состояние сценария ───────────────────────────────────────────────────────
+
+local scenario = {
+    seller_id  = nil,
+    buyer_id   = nil,
+    running    = false,
+    setup_at   = nil,   -- time_global() когда запланирован setup
+    log        = {},
+    log_max    = 30,
+}
+
+-- ─── Лог ─────────────────────────────────────────────────────────────────────
+
+local function slog(fmt, ...)
+    local msg = strformat(fmt, ...)
+    table.insert(scenario.log, msg)
+    if #scenario.log > scenario.log_max then
+        table.remove(scenario.log, 1)
+    end
+    Msg("[SCENARIO] %s", msg)
+end
+
+-- ─── Спавн ───────────────────────────────────────────────────────────────────
+
+--- Заспавнить NPC рядом с актором со смещением.
+--- @return number|nil  ID созданного объекта
+local function spawn_at_offset(section, offset)
+    if not db.actor then
+        slog("ОШИБКА: актор недоступен (нужно быть в игре)")
+        return nil
+    end
+    local actor_pos = db.actor:position()
+    local pos = vector():set(
+        actor_pos.x + offset.x,
+        actor_pos.y + offset.y,
+        actor_pos.z + offset.z
+    )
+    local lv = db.actor:level_vertex_id()
+    local gv = db.actor:game_vertex_id()
+    local se = alife():create(section, pos, lv, gv)
+    if se then
+        slog("Spawned [%s] id=%d  pos=(%.1f, %.1f, %.1f)",
+            section, se.id, pos.x, pos.y, pos.z)
+        return se.id
+    else
+        slog("ОШИБКА: alife():create('%s') вернул nil", section)
+        return nil
+    end
+end
+
+--- Спавнить предмет в инвентаре онлайн-объекта.
+--- Если объект ещё оффлайн, item создаётся как «дочерний» server-entity
+--- и появится в инвентаре при следующем переходе в онлайн.
+local function give_item(npc_id, item_section)
+    local obj = level and level.object_by_id(npc_id)
+    local pos  = obj and obj:position() or db.actor:position()
+    local lv   = obj and obj:level_vertex_id() or db.actor:level_vertex_id()
+    local gv   = obj and obj:game_vertex_id()  or db.actor:game_vertex_id()
+    local item_se = alife():create(item_section, pos, lv, gv, npc_id)
+    if item_se then
+        slog("  + item [%s] id=%d → npc %d", item_section, item_se.id, npc_id)
+    else
+        slog("  ОШИБКА: не удалось создать [%s] для npc %d", item_section, npc_id)
+    end
+end
+
+--- Дать деньги онлайн-объекту.
+local function give_money(npc_id, amount)
+    local obj = level and level.object_by_id(npc_id)
+    if obj then
+        obj:give_money(amount)
+        slog("  + %d руб. → npc %d", amount, npc_id)
+    else
+        slog("  (npc %d ещё оффлайн, дать деньги не удалось)", npc_id)
+    end
+end
+
+-- ─── Запуск / остановка ──────────────────────────────────────────────────────
+
+local function setup_equipment()
+    if not scenario.seller_id or not scenario.buyer_id then
+        slog("ОШИБКА: нет ID сталкеров при setup")
+        return
+    end
+    slog("--- Выдаём снаряжение ---")
+    give_item(scenario.seller_id, CFG.weapon_section)
+    give_item(scenario.seller_id, CFG.weapon_section)
+    give_money(scenario.buyer_id, CFG.buyer_money)
+    slog("Stalker_%d (продавец): 2x [%s], 0 руб.", scenario.seller_id, CFG.weapon_section)
+    slog("Stalker_%d (покупатель): 0 оружий, %d руб.", scenario.buyer_id, CFG.buyer_money)
+
+    slog("--- Запускаем переговоры ---")
+    npc_trade_negotiation.start(scenario.buyer_id, scenario.seller_id)
+    scenario.running = true
+    scenario.setup_at = nil
+end
+
+local function start_scenario()
+    if scenario.running then
+        slog("Сценарий уже запущен")
+        return
+    end
+
+    npc_trade_negotiation.clear()
+    scenario.seller_id = nil
+    scenario.buyer_id  = nil
+    scenario.setup_at  = nil
+
+    slog("=== СТАРТ СЦЕНАРИЯ: NPC TRADE ===")
+    slog("--- Спавним сталкеров ---")
+
+    scenario.seller_id = spawn_at_offset(CFG.seller_section, CFG.seller_offset)
+    scenario.buyer_id  = spawn_at_offset(CFG.buyer_section,  CFG.buyer_offset)
+
+    if not scenario.seller_id or not scenario.buyer_id then
+        slog("ОШИБКА: не удалось заспавнить сталкеров")
+        return
+    end
+
+    slog("Stalker_%d = продавец | Stalker_%d = покупатель",
+        scenario.seller_id, scenario.buyer_id)
+    slog("Ждём 2с чтобы NPC перешли в онлайн...")
+
+    -- Отложенная выдача снаряжения: через setup_delay_ms мс после спавна
+    scenario.setup_at = time_global() + CFG.setup_delay_ms
+end
+
+local function stop_scenario()
+    npc_trade_negotiation.clear()
+    scenario.running  = false
+    scenario.setup_at = nil
+
+    if scenario.seller_id then
+        local se = alife():object(scenario.seller_id)
+        if se then
+            alife():release(se, true)
+            slog("Released Stalker_%d (продавец)", scenario.seller_id)
+        end
+    end
+    if scenario.buyer_id then
+        local se = alife():object(scenario.buyer_id)
+        if se then
+            alife():release(se, true)
+            slog("Released Stalker_%d (покупатель)", scenario.buyer_id)
+        end
+    end
+
+    scenario.seller_id = nil
+    scenario.buyer_id  = nil
+    slog("=== СЦЕНАРИЙ ОСТАНОВЛЕН ===")
+end
+
+-- ─── Основной цикл ───────────────────────────────────────────────────────────
+
+AddUniqueCall(function()
+    -- Отложенный setup снаряжения
+    if scenario.setup_at and time_global() >= scenario.setup_at then
+        setup_equipment()
+    end
+
+    -- Обновление FSM переговоров
+    if scenario.running then
+        npc_trade_negotiation.update()
+        -- Проверяем завершение всех сессий
+        local any_active = false
+        for _, s in pairs(npc_trade_negotiation.get_sessions()) do
+            if not s.done then any_active = true end
+        end
+        if not any_active then
+            scenario.running = false
+            slog("=== ВСЕ СЕССИИ ЗАВЕРШЕНЫ ===")
+        end
+    end
+end)
+
+-- ─── ImGui-панель ────────────────────────────────────────────────────────────
+
+local show_window = false
+
+ImGui.Groups.Debug.Widget(function()
+    local clicked, val = ImGui.MenuItem("NPC Trade Scenario", nil, show_window)
+    if clicked then show_window = val end
+end)
+
+ImGui.Groups.Unique.Widget(function()
+    if not show_window then return end
+
+    local opened = ImGui.Begin("NPC Trade Scenario", true,
+        bit.bor(ImGui.WindowFlags_NoCollapse))
+    if not opened then ImGui.End() return end
+
+    -- ── Конфигурация ──
+    ImGui.TextDisabled(strformat(
+        "Продавец: [%s]+2x[%s]  |  Покупатель: [%s]+%d руб.",
+        CFG.seller_section, CFG.weapon_section,
+        CFG.buyer_section,  CFG.buyer_money))
+
+    ImGui.Separator()
+
+    -- ── Статус объектов ──
+    if scenario.seller_id or scenario.buyer_id then
+        ImGui.Text(strformat(
+            "Stalker_%s (продавец)  |  Stalker_%s (покупатель)",
+            tostring(scenario.seller_id),
+            tostring(scenario.buyer_id)))
+    end
+
+    if scenario.setup_at then
+        local remain = math.max(0, scenario.setup_at - time_global())
+        ImGui.TextColored(ImVec4(1, 0.8, 0.2, 1),
+            strformat("Ожидание перехода в онлайн: %.1f с...", remain / 1000.0))
+    end
+
+    -- ── Активные сессии ──
+    for _, s in pairs(npc_trade_negotiation.get_sessions()) do
+        ImGui.Separator()
+        local status_color = s.done
+            and ImVec4(0.4, 1.0, 0.4, 1)
+            or  ImVec4(1.0, 1.0, 0.2, 1)
+        ImGui.Text(strformat("Сессия: покупатель=%d  продавец=%d",
+            s.buyer_id, s.seller_id))
+        ImGui.SameLine()
+        ImGui.TextColored(status_color, s.done and "[ЗАВЕРШЕНО]" or "[АКТИВНА]")
+
+        ImGui.Text(strformat("  Покупатель: %s",
+            npc_trade_negotiation.buyer_state(s)))
+        ImGui.Text(strformat("  Продавец:   %s",
+            npc_trade_negotiation.seller_state(s)))
+
+        if s.accepted ~= nil then
+            local ac_color = s.accepted
+                and ImVec4(0.4, 1.0, 0.4, 1)
+                or  ImVec4(1.0, 0.4, 0.4, 1)
+            ImGui.SameLine()
+            ImGui.TextColored(ac_color, s.accepted and "  → Принято" or "  → Отказано")
+        end
+    end
+
+    ImGui.Separator()
+
+    -- ── Кнопки управления ──
+    if not scenario.running and not scenario.setup_at then
+        if ImGui.Button("▶  Запустить сценарий") then
+            start_scenario()
+        end
+    else
+        ImGui.TextDisabled("Выполняется...")
+        ImGui.SameLine()
+        if ImGui.Button("■  Остановить") then
+            stop_scenario()
+        end
+    end
+
+    ImGui.SameLine()
+    if ImGui.Button("Очистить лог") then
+        scenario.log = {}
+    end
+
+    ImGui.Separator()
+
+    -- ── Лог сценария ──
+    ImGui.Text("Лог событий:")
+    if ImGui.BeginChild("##trade_scenario_log", 0, 180, true) then
+        for _, line in ipairs(scenario.log) do
+            ImGui.TextUnformatted(line)
+        end
+        -- Автопрокрутка
+        if ImGui.GetScrollY() >= ImGui.GetScrollMaxY() - 10 then
+            ImGui.SetScrollHereY(1.0)
+        end
+    end
+    ImGui.EndChild()
+
+    ImGui.TextDisabled("Открыть: F7 → F7 → Debug → NPC Trade Scenario")
+
+    ImGui.End()
+end)
