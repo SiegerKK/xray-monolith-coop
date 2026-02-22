@@ -128,20 +128,6 @@ local function give_money(npc_id, amount)
     end
 end
 
---- Убедиться что онлайн-объект принадлежит фракции "stalker" (лонеры).
---- Это гарантирует нейтралитет: оба НПЦ не нападают друг на друга.
-local function ensure_loner_community(npc_id)
-    local obj = level and level.object_by_id(npc_id)
-    if obj then
-        -- set_character_community(community_str, squad_id, group_id)
-        -- "stalker" = строка фракции лонеров в game_relations.ltx
-        obj:set_character_community("stalker", 0, 0)
-        slog("  community → 'stalker' (loner) для npc %d", npc_id)
-    else
-        slog("  (npc %d оффлайн, community не изменена)", npc_id)
-    end
-end
-
 -- ─── Запуск / остановка ──────────────────────────────────────────────────────
 
 local function setup_equipment()
@@ -149,11 +135,6 @@ local function setup_equipment()
         slog("ОШИБКА: нет ID сталкеров при setup")
         return
     end
-    -- Гарантируем нейтральную фракцию (страховка: даже если секция stalker_loner
-    -- по какой-либо причине создаёт враждебного НПЦ, это исправит ситуацию).
-    slog("--- Устанавливаем фракцию 'stalker' (loner) ---")
-    ensure_loner_community(scenario.seller_id)
-    ensure_loner_community(scenario.buyer_id)
     slog("--- Выдаём снаряжение ---")
     give_item(scenario.seller_id, CFG.weapon_section)
     give_item(scenario.seller_id, CFG.weapon_section)
