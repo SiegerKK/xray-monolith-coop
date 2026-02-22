@@ -11,6 +11,11 @@ on:
   pull_request:
     branches: [ "all-in-one-vs2022-wpo" ]
   workflow_dispatch:
+    inputs:
+      source_branch:
+        description: 'Branch to build (leave empty to use the branch selected above)'
+        required: false
+        default: ''
 
 permissions: write-all
 
@@ -39,6 +44,8 @@ jobs:
     steps:
     - name: Checkout repo
       uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.source_branch || github.ref }}
 
     - name: Pack gamedata
       run: |
@@ -89,8 +96,9 @@ jobs:
         
     - name: Checkout repo
       uses: actions/checkout@v4
-      # with:
-      #   ref: all-in-one-vs2022
+      with:
+        ref: ${{ inputs.source_branch || github.ref }}
+        # ref: all-in-one-vs2022
       
     - name: Init submodules
       uses: snickerbockers/submodules-init@v4
@@ -197,8 +205,9 @@ jobs:
 
     - name: Checkout repo
       uses: actions/checkout@v4
-      # with:
-      #   ref: all-in-one-vs2022-wpo-mt
+      with:
+        ref: ${{ inputs.source_branch || github.ref }}
+        # ref: all-in-one-vs2022-wpo-mt
 
     - name: Init submodules
       uses: snickerbockers/submodules-init@v4
