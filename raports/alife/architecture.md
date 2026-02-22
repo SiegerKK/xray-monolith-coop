@@ -624,6 +624,194 @@ bool conflicted(const CInventoryItem* current, const CWeapon* new_weapon, ...) {
 
 ---
 
+## 15. Отладка ALife
+
+### 15.1 Сборка с отладкой
+
+Все debug-инструменты спрятаны за препроцессорным флагом `#ifdef DEBUG`. Чтобы они были доступны, нужно **собрать проект в Debug-конфигурации** (Visual Studio: конфигурация `Debug`; препроцессорный символ `DEBUG`, определяется через `/D DEBUG` или `/DDEBUG` — стандартный MSVC-синтаксис). В Release-сборках консольные команды `ai_draw_*` и детальные лог-блоки отсутствуют.
+
+Дополнительный флаг для GOAP-планировщика — аргумент командной строки **`-dbgact`**, включающий вывод каждого действия:
+```
+"DEBUG: Action [%s] initializing"
+"DEBUG: Action [%s] executing"
+```
+
+---
+
+### 15.2 Флаги отладки AI (`psAI_Flags`)
+
+Все флаги определены в `src/xrGame/ai_debug.h` и управляются битовым полем `psAI_Flags`:
+
+| Флаг | Маска | Назначение |
+|---|---|---|
+| `aiDebug` | `1<<0` | Общий AI-отладчик |
+| `aiBrain` | `1<<1` | Принятие решений (Brain) |
+| `aiMotion` | `1<<2` | Движение / анимации путей |
+| `aiFrustum` | `1<<3` | Отладка усечённой пирамиды видимости |
+| `aiFuncs` | `1<<4` | Вызовы оценочных функций |
+| `aiALife` | `1<<5` | **ALife-симулятор** (основной флаг) |
+| `aiGOAP` | `1<<7` | Планировщик GOAP |
+| `aiCover` | `1<<8` | Система укрытий |
+| `aiVision` | `1<<10` | Система зрения |
+| `aiMonsterDebug` | `1<<11` | Отладка монстров |
+| `aiSerialize` | `1<<14` | Сериализация состояния |
+| `aiGOAPScript` | `1<<17` | GOAP через скрипт |
+| `aiGOAPObject` | `1<<18` | GOAP конкретного объекта |
+| `aiStalker` | `1<<19` | Сталкер-специфика |
+| `aiDrawGameGraph` | `1<<20` | **Рисовать граф уровней** |
+| `aiDrawGameGraphStalkers` | `1<<21` | **Позиции сталкеров на графе** |
+| `aiDrawGameGraphObjects` | `1<<22` | Все ALife-объекты на графе |
+| `aiDrawGameGraphRealPos` | `1<<28` | Реальные 3D-позиции (не мини-карта) |
+| `aiDrawVisibilityRays` | `1<<26` | Лучи видимости |
+
+---
+
+### 15.3 Консольные команды
+
+#### Основные ALife-команды
+
+```
+ai_dbg_alife 1         // включить ALife-отладку (флаг aiALife)
+ai_dbg_brain 1         // отладка принятия решений
+ai_dbg_goap 1          // вывод плана GOAP в лог
+ai_dbg_goap_script 1   // GOAP через скрипты
+ai_dbg_goap_object 1   // GOAP конкретного объекта
+mt_alife 1             // параллельное выполнение ALife (многопоток)
+```
+
+#### Визуализация game graph (только Debug-сборка)
+
+```
+ai_draw_game_graph 1                      // показать граф уровней
+ai_draw_game_graph_stalkers 1             // показать позиции сталкеров
+ai_draw_game_graph_objects 1              // показать все ALife-объекты
+ai_draw_game_graph_real_pos 1             // использовать реальные 3D-координаты
+ai_draw_game_graph_current_level          // граф текущего уровня
+ai_draw_game_graph_all                    // граф всех уровней
+ai_draw_game_graph_level <имя_уровня>     // граф конкретного уровня
+```
+
+#### Прочие полезные AI-команды
+
+```
+ai_monster_info 1       // информация о ближайшем монстре
+ai_dbg_node 1           // отладка узлов nav-графа
+ai_use_smart_covers 1   // включить/выключить smart covers
+```
+
+---
+
+### 15.4 Цветовое кодирование game graph
+
+`CLevelGraph::render()` в `level_graph_debug.cpp` (весь файл — только `#ifdef DEBUG`) рисует:
+
+| Цвет | RGB (десятичный) | Объект |
+|---|---|---|
+| Голубой | (0, 255, 255) | Обычные вершины графа |
+| Пурпурный | (255, 0, 255) | Специальные вершины |
+| Зелёный | (0, 255, 0) | Рёбра (связи между вершинами) |
+| Красный | (255, 0, 0) | Позиции сталкеров |
+| Жёлтый | (255, 255, 0) | Текстовые метки объектов |
+
+---
+
+### 15.5 Логи ALife в консоли
+
+Даже в Release-сборке ряд событий выводится через `Msg()`:
+
+| Событие | Сообщение |
+|---|---|
+| Создание игры | `* Creating new game...` / `* New game is successfully created!` |
+| Сохранение | `* Game %s is successfully saved to file '%s'` |
+| Загрузка | `* Game %s is successfully loaded from file '%s' (%.3fs)` |
+| Спавн объекта | `[LSS] Spawning object [%s][%s][%d]` |
+| Начало боя | `[LSS] %s started combat versus %s` |
+| Выбор атаки | `[LSS] %s choosed to attack %s` ¹ |
+| Отступление | `[LSS] %s choosed to retreat from %s` ¹ |
+| Смерть | `[LSS] %s is dead` |
+| Загрузка спавна | `* %d spawn points are successfully loaded` |
+| Загрузка объектов | `* %d objects are successfully loaded` |
+| Сохранение объектов | `* %d objects are successfully saved` |
+
+Все `[LSS]`-сообщения — из `alife_interaction_manager.cpp` и `alife_combat_manager.cpp`, видны в игровой консоли и в `log.txt`.
+
+> ¹ Опечатка в оригинальном исходном коде (`choosed` вместо `chose`) — строки воспроизведены точно.
+
+---
+
+### 15.6 GOAP-планировщик: отладка решений
+
+При включённом `ai_dbg_goap 1` (и сборке с `#ifdef LOG_ACTION`):
+
+```cpp
+// action_planner_inline.h
+Msg("%6d : Solution for object %s [%d vertices searched]",
+    Device.dwTimeGlobal,
+    object_name(),
+    solver_algorithm().data_storage().get_visited_node_count());
+// Для каждого действия в плане:
+Msg("%s", action2string(solution()[i]));
+```
+
+Позволяет видеть **текущий план НПЦ** (список действий) и **стоимость поиска** (число просмотренных вершин) в реальном времени.
+
+---
+
+### 15.7 ПДА: что видно про НПЦ
+
+**PDA-интерфейс** (`UIPdaWnd`) содержит вкладки:
+
+| Вкладка | Содержимое |
+|---|---|
+| `eptTasks` | Задания игрока |
+| `eptRanking` | Рейтинги персонажей/фракций |
+| `eptLogs` | Новости / сообщения (обновляются через `UpdateNews()`) |
+
+Встроенного **списка NPC-отрядов с позициями на карте** в базовом PDA нет. Карта доступна через `UIMapWnd` (отдельное окно), но она показывает метки заданий игрока, а не положение ALife-объектов.
+
+Позиции сталкеров в мире доступны только через консольную команду `ai_draw_game_graph_stalkers 1` (debug-сборка) — рисует красные точки прямо в 3D-мире.
+
+---
+
+### 15.8 Настройка параметров ALife (ltx/конфиги)
+
+Основные параметры ALife задаются в C++-коде через методы симулятора:
+
+```cpp
+alife().set_process_time(microseconds);  // время на обработку за кадр
+alife().objects_per_update(n);           // объектов за один тик
+alife().set_switch_factor(factor);       // коэффициент переключения онлайн/оффлайн
+```
+
+Найденный конфиг-файл `gamedata/configs/mod_system_spawn_antifreeze_ignore.ltx` управляет исключениями из анти-фриза спавна — он не влияет на основные параметры симуляции.
+
+**Для изменения параметров в runtime** используйте Lua-скрипты через биндинги `CALifeSimulatorScript` (экспорт в Lua через `alife_simulator_script.cpp`).
+
+---
+
+### 15.9 Быстрый старт отладки ALife
+
+```
+# 1. Собрать в Debug-конфигурации (Visual Studio → Debug)
+
+# 2. Запустить игру с флагом для GOAP:
+game.exe -dbgact
+
+# 3. В консоли игры (тильда ~):
+ai_dbg_alife 1
+ai_dbg_goap 1
+ai_draw_game_graph 1
+ai_draw_game_graph_stalkers 1
+ai_draw_game_graph_objects 1
+
+# 4. Смотреть log.txt на [LSS]-сообщения:
+# [LSS] Spawning object ...
+# [LSS] X started combat versus Y
+# [LSS] X is dead
+```
+
+---
+
 ## Источники (ключевые файлы)
 
 | Файл | Расположение |
@@ -644,4 +832,9 @@ bool conflicted(const CInventoryItem* current, const CWeapon* new_weapon, ...) {
 | `ai_stalker_fire.cpp` | `src/xrGame/` |
 | `alife_human_object_handler.h/.cpp` | `src/xrGame/` |
 | `stalker_alife_task_actions.h/.cpp` | `src/xrGame/` |
-| `ef_primary.cpp` | `src/xrGame/` |
+| `ai_debug.h` | `src/xrGame/` |
+| `console_commands.cpp` | `src/xrGame/` |
+| `level_graph_debug.cpp` | `src/xrGame/` |
+| `alife_interaction_manager.cpp` | `src/xrGame/` |
+| `action_planner_inline.h` | `src/xrGame/` |
+| `ui/UIPdaWnd.h/.cpp` | `src/xrGame/` |
