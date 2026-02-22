@@ -8,15 +8,25 @@
 --   Stalker_2 (покупатель): 0 оружий, 500 руб.
 --
 --   Stalker_2 замечает отсутствие оружия → находит Stalker_1 →
---   отправляет запрос на покупку → Stalker_1 рассматривает (80% согласие) →
---   если согласен: Stalker_2 подходит и покупает оружие за 300 руб.
+--   отправляет запрос на покупку → Stalker_1 ВСЕГДА соглашается (100%) →
+--   Stalker_2 подходит и покупает оружие за 300 руб.
+--
+-- ────────────────────────────────────────────────────────────────────────────
+-- ВАЖНО: это СКРИПТ-СПАВН, не ALife
+-- ────────────────────────────────────────────────────────────────────────────
+-- alife():create() обходит систему ALife и напрямую создаёт объект в мире.
+-- ALife-спавн происходит через смарт-терреины и spawn-точки на уровне:
+-- движок сам решает кого и когда заспавнить на основе simulate()/enabled().
+-- Здесь же мы вручную создаём двух НПЦ рядом с актором для теста механики.
+-- ────────────────────────────────────────────────────────────────────────────
+--
+-- Секции НПЦ:
+--   "stalker_loner" — лонеры (нейтральны друг к другу и к актору-лонеру).
+--   Класс движка: "stalker" (зарегистрирован в object_factory_register.cpp).
+--   Секции типа "stalker_bandit" — бандиты, враждебны лонерам. НЕ используем.
+--   Полный список секций см. в gamedata/configs/creatures/ базовой игры.
 --
 -- Открыть панель: F7 → F7 (захват ввода) → Debug → NPC Trade Scenario
---
--- Настройка секций:
---   SELLER_SECTION / BUYER_SECTION  — секции для alife():create()
---   WEAPON_SECTION                  — секция оружия из configs/
---   Подбирайте секции под установленный контент.
 --
 -- Зависимости: npc_trade.script, npc_trade_negotiation.script, _imgui_groups.script
 -------------------------------------------------------------------------------
@@ -24,8 +34,11 @@
 -- ─── Конфигурация ─────────────────────────────────────────────────────────────
 
 local CFG = {
-    seller_section = "stalker_bandit",   -- секция для alife():create(section,...)
-    buyer_section  = "stalker_bandit",
+    -- "stalker_loner" — стандартная секция НПЦ-лонера в CoP/SoC.
+    -- Лонеры нейтральны друг к другу, что нужно для мирной торговли.
+    -- Если секция не найдена (другой билд/мод), попробуйте "sim_default_stalker".
+    seller_section = "stalker_loner",
+    buyer_section  = "stalker_loner",
     weapon_section = "wpn_ak74",         -- оружие (2 штуки продавцу)
     buyer_money    = 500,                -- руб. покупателю
     -- Смещения по XZ-плоскости от актора. Корректируйте при необходимости,
@@ -115,6 +128,20 @@ local function give_money(npc_id, amount)
     end
 end
 
+--- Убедиться что онлайн-объект принадлежит фракции "stalker" (лонеры).
+--- Это гарантирует нейтралитет: оба НПЦ не нападают друг на друга.
+local function ensure_loner_community(npc_id)
+    local obj = level and level.object_by_id(npc_id)
+    if obj then
+        -- set_character_community(community_str, squad_id, group_id)
+        -- "stalker" = строка фракции лонеров в game_relations.ltx
+        obj:set_character_community("stalker", 0, 0)
+        slog("  community → 'stalker' (loner) для npc %d", npc_id)
+    else
+        slog("  (npc %d оффлайн, community не изменена)", npc_id)
+    end
+end
+
 -- ─── Запуск / остановка ──────────────────────────────────────────────────────
 
 local function setup_equipment()
@@ -122,6 +149,11 @@ local function setup_equipment()
         slog("ОШИБКА: нет ID сталкеров при setup")
         return
     end
+    -- Гарантируем нейтральную фракцию (страховка: даже если секция stalker_loner
+    -- по какой-либо причине создаёт враждебного НПЦ, это исправит ситуацию).
+    slog("--- Устанавливаем фракцию 'stalker' (loner) ---")
+    ensure_loner_community(scenario.seller_id)
+    ensure_loner_community(scenario.buyer_id)
     slog("--- Выдаём снаряжение ---")
     give_item(scenario.seller_id, CFG.weapon_section)
     give_item(scenario.seller_id, CFG.weapon_section)
@@ -147,6 +179,10 @@ local function start_scenario()
     scenario.setup_at  = nil
 
     slog("=== СТАРТ СЦЕНАРИЯ: NPC TRADE ===")
+    slog("Метод спавна: alife():create() — СКРИПТ-СПАВН (не ALife).")
+    slog("  ALife-спавн управляется движком через смарт-терреины/spawn-точки.")
+    slog("  Скрипт-спавн обходит симуляцию и создаёт объект немедленно.")
+    slog("Секция НПЦ: [%s] (лонеры, нейтральны друг к другу)", CFG.seller_section)
     slog("--- Спавним сталкеров ---")
 
     scenario.seller_id = spawn_at_offset(CFG.seller_section, CFG.seller_offset)
@@ -159,7 +195,7 @@ local function start_scenario()
 
     slog("Stalker_%d = продавец | Stalker_%d = покупатель",
         scenario.seller_id, scenario.buyer_id)
-    slog("Ждём 2с чтобы NPC перешли в онлайн...")
+    slog("Ждём %.1fс чтобы NPC перешли в онлайн...", CFG.setup_delay_ms / 1000.0)
 
     -- Отложенная выдача снаряжения: через setup_delay_ms мс после спавна
     scenario.setup_at = time_global() + CFG.setup_delay_ms

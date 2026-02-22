@@ -1275,7 +1275,7 @@ idle → received_request → reviewing → responded → waiting_buyer → sold
 ```
 
 Ключевые правила:
-- Продавец принимает/отклоняет с вероятностью 80/20 (`ACCEPT_CHANCE`)
+- Продавец **всегда соглашается** (`ACCEPT_CHANCE = 100`) — надёжный режим тестирования; меняется в одной строке
 - Покупатель вызывает `set_desired_position(seller:position())` и идёт к продавцу
 - Переход «arrived» происходит по условию `distance_to <= 5m` или по таймауту (5 шагов)
 - Финальный обмен через `npc_trade.sell_item()`
@@ -1292,39 +1292,57 @@ npc_trade_negotiation.clear()                     -- сбросить все с�
 
 #### `gamedata/scripts/debug_trade_scenario.script` — тест-сценарий
 
-Спавнит двух сталкеров, выдаёт снаряжение и запускает переговоры.
+Спавнит двух нейтральных сталкеров-лонеров, выдаёт снаряжение и запускает переговоры.
 
 Открыть: **F7 → F7 → Debug → NPC Trade Scenario**.
 
+> **Это скрипт-спавн, а не ALife.**  
+> `alife():create()` обходит симуляцию и создаёт объект напрямую.  
+> ALife-спавн управляется движком через смарт-терреины и spawn-точки уровня.
+
 Что происходит после нажатия «Запустить сценарий»:
-1. `alife():create("stalker_bandit", pos, lv, gv)` — спавн продавца (+3м от актора)
-2. `alife():create("stalker_bandit", pos, lv, gv)` — спавн покупателя (−3м от актора)
-3. Через 2 секунды (ожидание перехода в онлайн): `alife():create(weapon, pos, lv, gv, seller_id)` × 2 + `buyer:give_money(500)`
+1. `alife():create("stalker_loner", pos, lv, gv)` × 2 — продавец (+3,+2м) и покупатель (−3,−2м)
+2. Через `setup_delay_ms` (2 сек, ожидание онлайн-перехода): `obj:set_character_community("stalker", 0, 0)` — принудительная установка фракции лонеров на обоих НПЦ
+3. `alife():create(weapon, pos, lv, gv, seller_id)` × 2 + `buyer:give_money(500)`
 4. `npc_trade_negotiation.start(buyer_id, seller_id)` — запуск FSM
 5. `AddUniqueCall` → `npc_trade_negotiation.update()` каждые 2 секунды реального времени
 6. Все события: `Msg()` в log.txt + ImGui-лог
 
 Пример лога в log.txt:
 ```
-[SCENARIO] Spawned [stalker_bandit] id=1234 pos=(150.3, 0.0, 200.1)
-[SCENARIO] Spawned [stalker_bandit] id=1235 pos=(144.3, 0.0, 200.1)
+[SCENARIO] Метод спавна: alife():create() — СКРИПТ-СПАВН (не ALife).
+[SCENARIO] Секция НПЦ: [stalker_loner] (лонеры, нейтральны друг к другу)
+[SCENARIO] Spawned [stalker_loner] id=1234 pos=(150.3, 0.0, 200.1)
+[SCENARIO] Spawned [stalker_loner] id=1235 pos=(144.3, 0.0, 200.1)
+[SCENARIO]   community → 'stalker' (loner) для npc 1234
+[SCENARIO]   community → 'stalker' (loner) для npc 1235
 [SCENARIO]   + item [wpn_ak74] id=1236 → npc 1234
 [SCENARIO]   + item [wpn_ak74] id=1237 → npc 1234
 [TRADE]    Stalker_1235: нет оружия! Ищу торговца поблизости...
 [TRADE]    Stalker_1235: нашёл торговца Stalker_1234 (оружий: 2, дистанция: 6.0m)
-[TRADE]    Stalker_1234: рассматриваю запрос... ПРИНЯТЬ (45/100 <= 80% шанс)
+[TRADE]    Stalker_1234: рассматриваю запрос... ПРИНЯТЬ (1/100 <= 100% шанс)
 [TRADE]    Stalker_1235: приближаюсь к Stalker_1234... 3.2m
 [TRADE]    [СДЕЛКА ЗАВЕРШЕНА] Stalker_1235 купил 'wpn_ak74' у Stalker_1234 за 300 руб.
 [TRADE]      Баланс: покупатель=200 руб | продавец=300 руб
 ```
 
-**Настройка секций** (в начале файла):
+**Почему `stalker_loner`, а не `stalker_bandit`:**  
+| Секция | Фракция | Отношение к лонерам |
+|---|---|---|
+| `stalker_loner` | `stalker` (loner) | Нейтральны → мирная торговля ✓ |
+| `stalker_bandit` | `bandit` | Враждебны → немедленная атака ✗ |
+
+Класс движка для обоих — `"stalker"` (`object_factory_register.cpp:258`).  
+Полный список секций — в `gamedata/configs/creatures/` базовой игры (не в этом репо).
+
+**Настройка** (в начале файла):
 ```lua
 local CFG = {
-    seller_section = "stalker_bandit",  -- секция для alife():create()
-    buyer_section  = "stalker_bandit",
+    seller_section = "stalker_loner",   -- нейтральная фракция
+    buyer_section  = "stalker_loner",
     weapon_section = "wpn_ak74",        -- подобрать под контент
     buyer_money    = 500,
+    setup_delay_ms = 2000,              -- задержка перехода в онлайн
 }
 ```
 
