@@ -10,6 +10,7 @@ on:
     branches: [ "all-in-one-vs2022-wpo" ]
   pull_request:
     branches: [ "all-in-one-vs2022-wpo" ]
+  workflow_dispatch:
 
 permissions: write-all
 
@@ -292,7 +293,7 @@ jobs:
     
     - name: Get Datetime
       id: datetime
-      run: echo "::set-output name=today::$(date +'%-Y.%-m.%-d')"
+      run: echo "today=$(date +'%-Y.%-m.%-d')" >> $GITHUB_OUTPUT
         
     # Use the output from the `datetime` step
     - name: Get Version
