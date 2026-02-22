@@ -415,6 +415,11 @@ void CModelPool::Prefetch()
 	// prefetch visuals
 	string256 section;
 	strconcat(sizeof(section), section, "prefetch_visuals_", g_pGamePersistent->m_game_params.m_game_type);
+	if (!pSettings->section_exist(section))
+	{
+		Logging(TRUE);
+		return;
+	}
 	CInifile::Sect& sect = pSettings->r_section(section);
 	for (CInifile::SectCIt I = sect.Data.begin(); I != sect.Data.end(); I++)
 	{
