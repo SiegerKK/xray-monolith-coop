@@ -1,0 +1,13 @@
+; Debug: Trade Zone smart terrain section.
+; Used by debug_alife_trade.script to dynamically spawn a smart terrain
+; that the ALife select_task() loop can discover via enabled()/suitable().
+;
+; class = smart_zone  ← registered as CSmartZone / CSE_ALifeSmartZone in
+;                        object_factory_register.cpp (see ADD(CSmartZone,...,"smart_zone")).
+; The Lua side (se_trade_zone.se_trade_zone) overrides enabled(), suitable(),
+; task(), register_npc(), and unregister_npc() via the luabind virtual-function
+; mechanism (luabind_virtual_zone macro in xrServer_script_macroses.h).
+
+[debug_trade_zone_test]
+class = smart_zone
+script_binding = se_trade_zone.bind

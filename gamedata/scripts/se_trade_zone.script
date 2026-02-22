@@ -1,0 +1,208 @@
+-------------------------------------------------------------------------------
+-- se_trade_zone — Custom ALife Smart Terrain for NPC Trade
+-------------------------------------------------------------------------------
+--
+-- This module defines a smart terrain that participates in the ALife
+-- offline decision chain.  When the engine runs select_task() for any
+-- offline stalker it calls:
+--
+--   1. zone:enabled(npc_se)   → bool   gates whether the zone is a candidate
+--   2. zone:suitable(npc_se)  → float  ranks candidates; highest value wins
+--   3. (after assignment) zone:task(npc_se) → CALifeSmartTerrainTask
+--                                             gives the patrol waypoint to walk to
+--   4. zone:register_npc(npc_se)   triggered when NPC arrives
+--   5. zone:unregister_npc(npc_se) triggered when NPC leaves
+--
+-- The trade fires automatically in register_npc() once both buyer and
+-- seller are present — NO external FSM, NO AddUniqueCall ticking.
+--
+-- How it differs from debug_trade_scenario.script:
+--   • The previous script manually drove each step of the protocol.
+--   • This module just defines suitable() rules; the ENGINE calls it
+--     inside CALifeMonsterBrain::select_task() on every ALife update tick.
+--
+-- Dependency: npc_trade.script (for sell_item)
+-- Section:    [debug_trade_zone_test] in mod_debug_trade_zone.ltx
+-------------------------------------------------------------------------------
+
+se_trade_zone = {}
+
+-- ─── Constants ───────────────────────────────────────────────────────────────
+
+-- Priority scores returned by suitable()
+local SUITABLE_BUYER  = 50.0   -- NPC without weapons: strong pull to zone
+local SUITABLE_SELLER = 30.0   -- NPC with 2+ weapons: moderate pull
+local WEAPON_PRICE    = 300
+
+-- Prefix used to identify weapons in offline inventory checks
+local WEAPON_PREFIX   = "wpn_"
+
+-- ─── Helpers ─────────────────────────────────────────────────────────────────
+
+--- Count weapons among the offline children of a server-entity NPC.
+--- Uses alife():get_children(se.id) which iterates ALife inventory.
+---@param se cse_alife_creature_abstract
+---@return number
+local function count_weapons_offline(se)
+    local count = 0
+    local sim = alife()
+    if not sim then return 0 end
+    for _, child_id in pairs(sim:get_children(se)) do
+        local child = sim:object(child_id)
+        if child then
+            local sec = child:section_name() or ""
+            if sec:sub(1, #WEAPON_PREFIX) == WEAPON_PREFIX then
+                count = count + 1
+            end
+        end
+    end
+    return count
+end
+
+-- ─── Smart Terrain Class ─────────────────────────────────────────────────────
+
+local se_base = cse_alife_smart_zone
+
+class "se_trade_zone" (se_base)
+
+--- Constructor — called by the engine when alife():create("debug_trade_zone_test",...) runs.
+---@param section string
+function se_trade_zone:__init(section) super(section)
+    self.registered = {}      -- { npc_id → "buyer"|"seller" }
+    self.task_obj   = nil     -- CALifeSmartTerrainTask (set when zone goes online)
+    Msg("[TradeZone] created section='%s'", section)
+end
+
+--- enabled(npc_se) → bool
+--- Called by select_task() to gate whether this zone is a candidate for npc_se.
+--- Only alive loner stalkers are eligible.
+---@param npc_se cse_alife_creature_abstract
+function se_trade_zone:enabled(npc_se)
+    if not npc_se or not npc_se:alive() then return false end
+    -- Accept only loner-community stalkers (IsStalker checks client clsid;
+    -- for server entities we use the class string check).
+    local ok = IsStalker(nil, npc_se:clsid())
+    if not ok then return false end
+    -- community() is on cse_alife_human_abstract (via CSE_ALifeTraderAbstract)
+    local comm = npc_se:community and npc_se:community() or ""
+    return (comm == "stalker" or comm == "loner")
+end
+
+--- suitable(npc_se) → float
+--- Called by select_task() to rank this zone vs all others.
+--- Returns a positive score only for buyer (no weapons) or seller (2+ weapons).
+--- Returns 0 for everyone else — ALife will pick a different zone for them.
+---@param npc_se cse_alife_creature_abstract
+function se_trade_zone:suitable(npc_se)
+    if not self:enabled(npc_se) then return 0 end
+    local wc = count_weapons_offline(npc_se)
+    if wc == 0 then
+        Msg("[TradeZone] suitable: npc=%d is BUYER (0 weapons) → %.1f", npc_se.id, SUITABLE_BUYER)
+        return SUITABLE_BUYER
+    elseif wc >= 2 then
+        Msg("[TradeZone] suitable: npc=%d is SELLER (%d weapons) → %.1f", npc_se.id, wc, SUITABLE_SELLER)
+        return SUITABLE_SELLER
+    end
+    -- NPC has exactly 1 weapon — not buyer, not seller: skip
+    return 0
+end
+
+--- task(npc_se) → CALifeSmartTerrainTask
+--- Called by process_task() to get the waypoint the NPC should walk to.
+--- We use the game-graph vertex where this zone itself was placed.
+---@param npc_se cse_alife_creature_abstract
+function se_trade_zone:task(npc_se)
+    -- Build the task lazily on first call (game vertex is available after spawn)
+    if not self.task_obj then
+        self.task_obj = CALifeSmartTerrainTask(self.m_tGraphID, self:level_vertex_id())
+        Msg("[TradeZone] task created: gvid=%d lvid=%d",
+            self.m_tGraphID, self:level_vertex_id())
+    end
+    return self.task_obj
+end
+
+--- register_npc(npc_se)
+--- Called by the engine when an NPC has been assigned to this zone.
+--- We log the assignment and — when both buyer and seller have arrived —
+--- fire the trade via npc_trade.sell_item().
+---@param npc_se cse_alife_creature_abstract
+function se_trade_zone:register_npc(npc_se)
+    local wc   = count_weapons_offline(npc_se)
+    local role = (wc == 0) and "buyer" or "seller"
+    self.registered[npc_se.id] = role
+    Msg("[TradeZone] register_npc: id=%d role=%s weapons=%d", npc_se.id, role, wc)
+
+    -- Check if we now have at least one buyer and one seller
+    local buyer_id, seller_id
+    for id, r in pairs(self.registered) do
+        if r == "buyer"  then buyer_id  = id end
+        if r == "seller" then seller_id = id end
+    end
+
+    if buyer_id and seller_id then
+        Msg("[TradeZone] Both parties registered! Buyer=%d Seller=%d — executing trade",
+            buyer_id, seller_id)
+        self:_execute_trade(buyer_id, seller_id)
+    end
+end
+
+--- unregister_npc(npc_se)
+---@param npc_se cse_alife_creature_abstract
+function se_trade_zone:unregister_npc(npc_se)
+    Msg("[TradeZone] unregister_npc: id=%d", npc_se.id)
+    self.registered[npc_se.id] = nil
+end
+
+--- _execute_trade — internal: find seller's first weapon and transfer it.
+---@param buyer_id  number
+---@param seller_id number
+function se_trade_zone:_execute_trade(buyer_id, seller_id)
+    -- Transfer is only possible when both NPCs are online (in load radius)
+    local buyer  = level and level.object_by_id(buyer_id)
+    local seller = level and level.object_by_id(seller_id)
+
+    if not buyer or not seller then
+        -- NPCs might still be offline — wait until they come online.
+        -- We schedule a retry by NOT clearing the registered table;
+        -- register_npc() will fire again when the NPC transitions online.
+        Msg("[TradeZone] trade deferred: buyer online=%s seller online=%s",
+            tostring(buyer ~= nil), tostring(seller ~= nil))
+        return
+    end
+
+    -- Find the first weapon in seller's inventory
+    local weapon_obj = nil
+    seller:iterate_inventory(function(_, item)
+        if not weapon_obj and item then
+            if (item:section() or ""):sub(1, #WEAPON_PREFIX) == WEAPON_PREFIX then
+                weapon_obj = item
+            end
+        end
+    end, seller)
+
+    if not weapon_obj then
+        Msg("[TradeZone] _execute_trade: seller %d has no weapon online!", seller_id)
+        return
+    end
+
+    local ok, msg = npc_trade.sell_item(seller_id, buyer_id, weapon_obj:id(), WEAPON_PRICE)
+    if ok then
+        Msg("[TradeZone] TRADE COMPLETE: %s", msg)
+        -- Unregister both so the zone doesn't try again
+        local sim = alife()
+        local se_buyer  = sim and sim:object(buyer_id)
+        local se_seller = sim and sim:object(seller_id)
+        if se_buyer  then self:unregister_npc(se_buyer)  end
+        if se_seller then self:unregister_npc(se_seller) end
+    else
+        Msg("[TradeZone] _execute_trade FAILED: %s", msg)
+    end
+end
+
+-- ─── Factory bind ────────────────────────────────────────────────────────────
+
+--- Bind function called by engine object factory for section "debug_trade_zone_test".
+---@param obj cse_alife_smart_zone
+function bind(obj)
+    return se_trade_zone(obj:section_name())
+end

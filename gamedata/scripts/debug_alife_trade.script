@@ -1,0 +1,326 @@
+-------------------------------------------------------------------------------
+-- ALife Trade Test — Debug Panel
+-- Воспроизводит торговлю через родную цепочку принятия решений ALife
+-------------------------------------------------------------------------------
+--
+-- ОТЛИЧИЕ ОТ debug_trade_scenario.script:
+--   Предыдущий скрипт вручную управлял каждым шагом переговоров через FSM.
+--   Этот скрипт только задаёт условия (smart terrain + НПЦ), а движок сам:
+--     1. Вызывает select_task() для каждого офлайн-сталкера
+--     2. Итерирует все зарегистрированные smart terrain'ы
+--     3. Вызывает zone:enabled(npc) и zone:suitable(npc) из se_trade_zone
+--     4. Присваивает НПЦ зону с наибольшим suitable()
+--     5. Вызывает process_task() → НПЦ идёт к waypoint зоны
+--     6. При прибытии движок вызывает zone:register_npc(npc)
+--     7. se_trade_zone автоматически исполняет сделку
+--   Никаких AddUniqueCall тиков, никакого ручного FSM.
+--
+-- Порядок работы:
+--   1. (Опционально) кнопка "Очистить сталкеров" — удаляет всех скрипт-
+--      спавнутых / рядовых сталкеров с карты для чистоты теста.
+--   2. Кнопка "Запустить ALife тест" — создаёт:
+--        • [debug_trade_zone_test] — smart terrain у актора
+--        • stalker_loner (продавец) + 2 оружия офлайн
+--        • stalker_loner (покупатель) + 0 оружий + 500 руб.
+--   3. Наблюдайте в логе и в ImGui как ALife двигает НПЦ к зоне.
+--
+-- Открыть: F7 → F7 → Debug → ALife Trade Test
+--
+-- Зависимости: se_trade_zone.script, npc_trade.script, _imgui_groups.script
+-------------------------------------------------------------------------------
+
+-- ─── Конфигурация ─────────────────────────────────────────────────────────────
+
+local CFG = {
+    zone_section   = "debug_trade_zone_test",
+    seller_section = "stalker_loner",
+    buyer_section  = "stalker_loner",
+    weapon_section = "wpn_ak74",
+    buyer_money    = 500,
+    -- Смещения (XZ) от актора при спавне
+    zone_offset    = vector():set( 0, 0,  0),   -- зона прямо у актора
+    seller_offset  = vector():set( 5, 0,  3),   -- продавец справа
+    buyer_offset   = vector():set(-5, 0, -3),   -- покупатель слева
+    setup_delay_ms = 2000,                      -- задержка после спавна
+}
+
+-- ─── Состояние ────────────────────────────────────────────────────────────────
+
+local state = {
+    zone_id    = nil,
+    seller_id  = nil,
+    buyer_id   = nil,
+    running    = false,
+    setup_at   = nil,
+    log        = {},
+    log_max    = 40,
+}
+
+local show_window = false
+
+-- ─── Лог ─────────────────────────────────────────────────────────────────────
+
+local function log(fmt, ...)
+    local msg = strformat(fmt, ...)
+    table.insert(state.log, msg)
+    if #state.log > state.log_max then table.remove(state.log, 1) end
+    Msg("[ALifeTrade] %s", msg)
+end
+
+-- ─── Спавн ───────────────────────────────────────────────────────────────────
+
+local function spawn_at(section, offset)
+    if not db.actor then
+        log("ОШИБКА: актор недоступен")
+        return nil
+    end
+    local p = db.actor:position()
+    local pos = vector():set(p.x + offset.x, p.y + offset.y, p.z + offset.z)
+    local se = alife():create(section, pos, db.actor:level_vertex_id(), db.actor:game_vertex_id())
+    if se then
+        log("Spawn [%s] id=%d", section, se.id)
+        return se.id
+    end
+    log("ОШИБКА: alife():create('%s') вернул nil", section)
+    return nil
+end
+
+local function give_item_offline(owner_id, section)
+    local se_owner = alife():object(owner_id)
+    if not se_owner then log("ОШИБКА: owner %d не найден в alife", owner_id); return end
+    local pos = se_owner.position
+    local lv  = se_owner:level_vertex_id and se_owner:level_vertex_id() or db.actor:level_vertex_id()
+    local gv  = se_owner.m_tGraphID or db.actor:game_vertex_id()
+    local item = alife():create(section, pos, lv, gv, owner_id)
+    if item then log("  + [%s] id=%d → npc %d", section, item.id, owner_id)
+    else log("  ОШИБКА: create('%s') для npc %d", section, owner_id) end
+end
+
+local function give_money_online(npc_id, amount)
+    local obj = level and level.object_by_id(npc_id)
+    if obj then obj:give_money(amount); log("  + %d руб. → npc %d", amount, npc_id)
+    else log("  (npc %d ещё оффлайн, деньги не выданы)", npc_id) end
+end
+
+-- ─── Запуск / очистка ────────────────────────────────────────────────────────
+
+local function clear_stalkers()
+    local sim = alife()
+    if not sim then log("alife() недоступен"); return end
+    local removed = 0
+    -- iterate_objects — functor, return true чтобы продолжить итерацию
+    sim:iterate_objects(function(se_obj)
+        if se_obj and IsStalker(nil, se_obj:clsid()) and se_obj:alive() then
+            -- Пропускаем актора
+            if se_obj.id ~= (db.actor and db.actor:id() or 0xffff) then
+                -- story_id == nil → не сюжетный персонаж
+                local sid = story_objects and story_objects.story_id_by_object_id
+                    and story_objects.story_id_by_object_id[se_obj.id]
+                if not sid then
+                    alife():release(se_obj, true)
+                    removed = removed + 1
+                end
+            end
+        end
+        return true
+    end)
+    log("Удалено %d сталкеров с карты", removed)
+end
+
+local function setup_equipment()
+    if not state.seller_id or not state.buyer_id then
+        log("ОШИБКА: IDs не заданы"); return
+    end
+    log("--- Выдаём снаряжение ---")
+    give_item_offline(state.seller_id, CFG.weapon_section)
+    give_item_offline(state.seller_id, CFG.weapon_section)
+    give_money_online(state.buyer_id,  CFG.buyer_money)
+    log("Продавец %d: 2x[%s]  |  Покупатель %d: %d руб.",
+        state.seller_id, CFG.weapon_section, state.buyer_id, CFG.buyer_money)
+    log("--- Ждём ALife select_task() ---")
+    log("Движок вызовет enabled()/suitable() на следующем тике ALife.")
+    log("Следите за строками [TradeZone] в log.txt")
+    state.running = true
+    state.setup_at = nil
+end
+
+local function start_test()
+    if state.running then log("Тест уже запущен"); return end
+
+    log("=== СТАРТ ALIFE TRADE TEST ===")
+    log("Метод: движок вызывает enabled()/suitable() в se_trade_zone")
+    log("--- Спавним зону и сталкеров ---")
+
+    state.zone_id   = spawn_at(CFG.zone_section,   CFG.zone_offset)
+    state.seller_id = spawn_at(CFG.seller_section,  CFG.seller_offset)
+    state.buyer_id  = spawn_at(CFG.buyer_section,   CFG.buyer_offset)
+
+    if not (state.zone_id and state.seller_id and state.buyer_id) then
+        log("ОШИБКА: спавн не удался, отмена")
+        return
+    end
+
+    log("TradeZone=%d  Продавец=%d  Покупатель=%d",
+        state.zone_id, state.seller_id, state.buyer_id)
+    log("Ждём %.1fс (переход в онлайн)...", CFG.setup_delay_ms / 1000.0)
+    state.setup_at = time_global() + CFG.setup_delay_ms
+end
+
+local function stop_test()
+    state.running = false
+    state.setup_at = nil
+    local sim = alife()
+    local function release(id)
+        if id and sim then
+            local se = sim:object(id)
+            if se then alife():release(se, true); log("Released id=%d", id) end
+        end
+    end
+    release(state.zone_id);  state.zone_id   = nil
+    release(state.seller_id); state.seller_id = nil
+    release(state.buyer_id);  state.buyer_id  = nil
+    log("=== ТЕСТ ОСТАНОВЛЕН ===")
+end
+
+-- ─── Tick ─────────────────────────────────────────────────────────────────────
+
+AddUniqueCall(function()
+    if state.setup_at and time_global() >= state.setup_at then
+        setup_equipment()
+    end
+
+    -- Monitor: show current smart_terrain_id for each NPC in the ImGui panel
+    -- (actual decision is in engine; we just observe)
+    if state.running and state.seller_id and state.buyer_id then
+        local sim = alife()
+        if sim then
+            local se_s = sim:object(state.seller_id)
+            local se_b = sim:object(state.buyer_id)
+            state._seller_terrain = se_s and se_s.m_smart_terrain_id or 0xffff
+            state._buyer_terrain  = se_b and se_b.m_smart_terrain_id or 0xffff
+            -- Detect when both are assigned to OUR trade zone
+            if state._seller_terrain == state.zone_id
+            and state._buyer_terrain  == state.zone_id then
+                if not state._both_assigned then
+                    state._both_assigned = true
+                    log("Оба НПЦ выбрали TradeZone=%d через select_task()", state.zone_id)
+                end
+            end
+        end
+    end
+end)
+
+-- ─── ImGui панель ─────────────────────────────────────────────────────────────
+
+ImGui.Groups.Debug.Widget(function()
+    local clicked, val = ImGui.MenuItem("ALife Trade Test", nil, show_window)
+    if clicked then show_window = val end
+end)
+
+ImGui.Groups.Unique.Widget(function()
+    if not show_window then return end
+
+    local opened = ImGui.Begin("ALife Trade Test", true,
+        bit.bor(ImGui.WindowFlags_NoCollapse))
+    if not opened then ImGui.End() return end
+
+    -- ── Заголовок ──
+    ImGui.TextDisabled("Метод: ALife select_task() → enabled() / suitable() → process_task()")
+    ImGui.TextDisabled("Торговля срабатывает из register_npc() в se_trade_zone")
+    ImGui.Separator()
+
+    -- ── Кнопка очистки ──
+    if ImGui.Button("Очистить всех сталкеров с карты") then
+        clear_stalkers()
+    end
+    ImGui.SameLine()
+    ImGui.TextDisabled("(удаляет несюжетных сталкеров)")
+
+    ImGui.Separator()
+
+    -- ── Статус ──
+    if state.zone_id then
+        ImGui.Text(strformat("TradeZone id=%s | Продавец id=%s | Покупатель id=%s",
+            tostring(state.zone_id), tostring(state.seller_id), tostring(state.buyer_id)))
+
+        local function terrain_str(tid)
+            if tid == nil or tid == 0xffff then return "нет задачи" end
+            if tid == state.zone_id then
+                return strformat("TradeZone %d ✓", tid)
+            end
+            return strformat("другая зона %d", tid)
+        end
+
+        local sc = ImVec4(0.4, 1.0, 0.4, 1)
+        local wc = ImVec4(1.0, 1.0, 0.4, 1)
+
+        ImGui.Text("Продавец → smart_terrain:"); ImGui.SameLine()
+        local st = state._seller_terrain
+        ImGui.TextColored(
+            (st == state.zone_id) and sc or wc,
+            terrain_str(st))
+
+        ImGui.Text("Покупатель → smart_terrain:"); ImGui.SameLine()
+        local bt = state._buyer_terrain
+        ImGui.TextColored(
+            (bt == state.zone_id) and sc or wc,
+            terrain_str(bt))
+    end
+
+    if state.setup_at then
+        local remaining_ms = math.max(0, state.setup_at - time_global())
+        ImGui.TextColored(ImVec4(1, 0.8, 0.2, 1),
+            strformat("Ожидание онлайн: %.1f с...", remaining_ms / 1000.0))
+    end
+
+    ImGui.Separator()
+
+    -- ── Кнопки управления ──
+    if not state.running and not state.setup_at then
+        if ImGui.Button("▶  Запустить ALife Trade Test") then
+            start_test()
+        end
+    else
+        ImGui.TextDisabled("Тест активен...")
+        ImGui.SameLine()
+        if ImGui.Button("■  Остановить") then stop_test() end
+    end
+
+    ImGui.SameLine()
+    if ImGui.Button("Очистить лог") then state.log = {} end
+
+    ImGui.Separator()
+
+    -- ── Сравнение подходов ──
+    if ImGui.CollapsingHeader("Чем отличается от debug_trade_scenario?") then
+        ImGui.TextWrapped(
+            "debug_trade_scenario.script:\n" ..
+            "  • Явный FSM (9+6 состояний), тикается AddUniqueCall каждые 2 сек\n" ..
+            "  • Скрипт сам двигает НПЦ через set_desired_position()\n" ..
+            "  • Торговля вызывается когда FSM достигает состояния 'arrived'\n\n" ..
+            "debug_alife_trade.script (этот):\n" ..
+            "  • Нет FSM, нет ручного тика\n" ..
+            "  • se_trade_zone.suitable() возвращает высокий score для buyer/seller\n" ..
+            "  • Движок в CALifeMonsterBrain::select_task() находит нашу зону\n" ..
+            "  • Движок в process_task() двигает НПЦ к game-vertex зоны\n" ..
+            "  • Торговля вызывается из register_npc() когда НПЦ прибывает"
+        )
+    end
+
+    ImGui.Separator()
+
+    -- ── Лог ──
+    ImGui.Text("Лог:")
+    if ImGui.BeginChild("##alife_trade_log", 0, 200, true) then
+        for _, line in ipairs(state.log) do
+            ImGui.TextUnformatted(line)
+        end
+        if ImGui.GetScrollY() >= ImGui.GetScrollMaxY() - 10 then
+            ImGui.SetScrollHereY(1.0)
+        end
+    end
+    ImGui.EndChild()
+
+    ImGui.TextDisabled("F7 → F7 → Debug → ALife Trade Test")
+    ImGui.End()
+end)
