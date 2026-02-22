@@ -197,8 +197,8 @@ jobs:
 
     - name: Checkout repo
       uses: actions/checkout@v4
-      with:
-        ref: all-in-one-vs2022-wpo-mt
+      # with:
+      #   ref: all-in-one-vs2022-wpo-mt
 
     - name: Init submodules
       uses: snickerbockers/submodules-init@v4
