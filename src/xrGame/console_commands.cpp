@@ -1672,14 +1672,24 @@ struct CCC_CoopHost : public IConsole_Command
             return;
         }
 
+        // Print log file path so the user can always find it
+        {
+            string_path log_path;
+            string256 log_name;
+            xr_sprintf(log_name, "%s_%s.log", Core.ApplicationName, Core.UserName);
+            FS.update_path(log_path, "$logs$", log_name);
+            Msg("[COOP] Log file: %s", log_path);
+        }
+
         // Build server options: level/coop  — same format as level/single
+        // psNET_direct_connect is set to TRUE for "/coop" in IPureServer::Connect
         string512 sv_opts;
         xr_sprintf(sv_opts, "%s/coop", args);
 
-        // Client connects to the local server via localhost
+        // Client connects to the local server via localhost (direct loopback)
         const char* cl_opts = "localhost";
 
-        Msg("[COOP] Hosting level: %s", args);
+        Msg("[COOP] Hosting level: '%s' | sv_opts='%s'", args, sv_opts);
         Engine.Event.Defer("KERNEL:start",
             size_t(xr_strdup(sv_opts)),
             size_t(xr_strdup(cl_opts)));

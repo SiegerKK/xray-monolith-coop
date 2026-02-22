@@ -247,7 +247,7 @@ IPureServer::EConnect IPureServer::Connect(LPCSTR options, GameDescriptionData& 
 	connect_options = options;
 	psNET_direct_connect = FALSE;
 
-	if (strstr(options, "/single"))
+	if (strstr(options, "/single") || strstr(options, "/coop"))
 		psNET_direct_connect = TRUE;
 
 	// Parse options

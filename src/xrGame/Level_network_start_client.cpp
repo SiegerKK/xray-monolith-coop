@@ -259,7 +259,7 @@ bool CLevel::net_start_client6()
 		if (game)
 		{
 			game->OnConnected();
-			if (game->Type() != eGameIDSingle)
+			if (game->Type() != eGameIDSingle && game->Type() != eGameIDCoop)
 			{
 				m_file_transfer = xr_new<file_transfer::client_site>();
 			}
