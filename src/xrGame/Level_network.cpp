@@ -353,7 +353,11 @@ bool CLevel::Connect2Server(const char* options)
 
 	Msg("[NET] Connect2Server | options='%s' psNET_direct_connect=%d", options, (int)psNET_direct_connect);
 
-	if (!psNET_direct_connect)
+	// Only generate auth hash for real MP games (not single/coop).
+	// For coop the server skips auth_generate too, so hashes would mismatch.
+	// NeedToCheckClient_BuildVersion() on the server side already returns false for IsGameTypeSingle(),
+	// but skip the redundant work here as well.
+	if (!psNET_direct_connect && !IsGameTypeSingle())
 	{
 		xr_auth_strings_t tmp_ignore;
 		xr_auth_strings_t tmp_check;

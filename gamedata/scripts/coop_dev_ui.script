@@ -145,7 +145,7 @@ if ImGui and ImGui.Groups then
         draw_panel()
     end)
 
-    Msg("[COOP] coop_dev_ui registered in ImGui.Groups.Mods")
+    printf("[COOP] coop_dev_ui registered in ImGui.Groups.Mods")
 else
-    Msg("[COOP] WARNING: ImGui.Groups not available — coop_dev_ui skipped")
+    printf("[COOP] WARNING: ImGui.Groups not available — coop_dev_ui skipped")
 end

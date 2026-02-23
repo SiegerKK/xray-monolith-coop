@@ -1688,8 +1688,9 @@ struct CCC_CoopHost : public IConsole_Command
         string512 sv_opts;
         xr_sprintf(sv_opts, "%s/coop/alife/new", args);
 
-        // Client connects to the local server via localhost (direct loopback)
-        const char* cl_opts = "localhost";
+        // Client connects to the local server via localhost TCP/IP (direct connect, no EnumHosts).
+        // /coop flag: tells NET_Client to skip EnumHosts and use direct NET->Connect (same as remote clients).
+        const char* cl_opts = "localhost/coop";
 
         Msg("[COOP] Hosting level: '%s' | sv_opts='%s' | server will listen on TCP port 1235", args, sv_opts);
         Msg("[COOP] Clients can join with: coop_connect <your_ip>");
