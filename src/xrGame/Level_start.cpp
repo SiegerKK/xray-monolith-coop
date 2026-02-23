@@ -162,7 +162,14 @@ bool CLevel::net_start2()
 			return true;
 		}
 		Server->SLS_Default();
-		map_data.m_name = Server->level_name(m_caServerOptions);
+		// For coop with ALife: game_sv_Single::level_name() returns alife().level_name()
+		// which is "fake_start" (the ALife initial state) until the level switch completes
+		// asynchronously during Server->Update() ticks.  Use the parsed level name from
+		// the original server options instead so the client loads the correct level.
+		if (g_pGamePersistent->GameType() == eGameIDCoop)
+			map_data.m_name = game_sv_GameState::parse_level_name(m_caServerOptions);
+		else
+			map_data.m_name = Server->level_name(m_caServerOptions);
 		Msg("[NET] Server started | level='%s' port=%d psNET_direct_connect=%d",
 		    *map_data.m_name, Server->GetPort(), (int)psNET_direct_connect);
 		if (!g_dedicated_server)

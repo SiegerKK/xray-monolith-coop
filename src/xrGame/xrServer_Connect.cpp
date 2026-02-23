@@ -84,9 +84,15 @@ xrServer::EConnect xrServer::Connect(shared_str& session_name, GameDescriptionDa
 	xr_strcpy(game_descr.download_url, get_map_download_url(game_descr.map_name, game_descr.map_version));
 	xr_strcpy(game_descr.game_type, game->type_name()); // sent to remote clients so they can set m_game_type correctly
 
+	// CALifeSimulator::CALifeSimulator() modifies session_name to its own save path
+	// (e.g. "all/single/alife") which confuses IPureServer::Connect() — it detects
+	// "/single" in that string and sets psNET_direct_connect=TRUE even for coop.
+	// Save the original transport options before Create() mangles them.
+	shared_str transport_opts = session_name;
+
 	game->Create(session_name);
 
-	return IPureServer::Connect(*session_name, game_descr);
+	return IPureServer::Connect(*transport_opts, game_descr);
 }
 
 
