@@ -530,9 +530,13 @@ BOOL IPureClient::Connect(LPCSTR options)
 
 			R_CHK(NET->SetClientInfo (&Pinfo,0,0,DPNSETCLIENTINFO_SYNC));
 		}
-		if (stricmp(server_name, "localhost") == 0)
+		// For coop remote clients: skip EnumHosts and use direct TCP/IP connect (same as localhost path).
+		// EnumHosts is an active-discovery step that fails over VPN/internet when the server uses
+		// DPNSESSION_NODPNSVR. Direct NET->Connect() bypasses discovery and works for any reachable IP.
+		const bool bCoopConnect = (strstr(options, "/coop") != nullptr);
+		if (stricmp(server_name, "localhost") == 0 || bCoopConnect)
 		{
-			Msg("- IPureClient: direct (localhost) connect to port %d", psSV_Port);
+			Msg("- IPureClient: direct connect to %s:%d (coop=%d)", server_name, psSV_Port, (int)bCoopConnect);
 			WCHAR SessionPasswordUNICODE[4096];
 			if (xr_strlen(password_str))
 			{

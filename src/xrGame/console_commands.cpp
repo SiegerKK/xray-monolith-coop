@@ -1720,12 +1720,22 @@ struct CCC_CoopConnect : public IConsole_Command
             return;
         }
 
-        // Client-only connect: no local server, connect to remote host
-        // Default server port is 1235 (START_PORT_LAN_SV). Can override with /port=XXXX in args.
+        // Client-only connect: no local server, connect to remote host.
+        // Append /coop so NET_Client.cpp uses direct TCP/IP connect (not EnumHosts).
+        // EnumHosts fails over VPN/internet because DPNSESSION_NODPNSVR servers don't answer
+        // discovery broadcasts; direct NET->Connect() works for any reachable IP.
         string512 cl_opts;
-        xr_sprintf(cl_opts, "%s", args);
+        if (strstr(args, "/name="))
+            xr_sprintf(cl_opts, "%s/coop", args);
+        else
+        {
+            const char* pname = pSettings->line_exist("mp_options", "player_name")
+                ? pSettings->r_string("mp_options", "player_name")
+                : "Player";
+            xr_sprintf(cl_opts, "%s/name=%s/coop", args, pname);
+        }
 
-        Msg("[COOP] Connecting to: %s (default port 1235 if not specified)", args);
+        Msg("[COOP] Connecting to: %s (default port 1235 if not specified)", cl_opts);
         Engine.Event.Defer("KERNEL:start",
             size_t(0),  // no local server
             size_t(xr_strdup(cl_opts)));

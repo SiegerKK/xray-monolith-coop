@@ -198,6 +198,11 @@ bool xrServer::NeedToCheckClient_BuildVersion(IClient* CL)
 	VERIFY(tmp_client);
 	PerformSecretKeysSync(tmp_client);
 
+	// Coop (and single-player) servers skip auth_generate, so the server-side FS.auth_get()
+	// is 0. Remote coop clients do run auth_generate and produce a non-zero hash. Rather than
+	// synchronizing auth on both sides, simply skip the auth challenge for coop/single entirely —
+	// this matches what RequestClientDigest() already does for IsGameTypeSingle().
+	if (IsGameTypeSingle()) return false;
 
 	if (g_SV_Disable_Auth_Check) return false;
 	CL->flags.bVerified = FALSE;
