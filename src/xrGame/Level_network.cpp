@@ -420,6 +420,9 @@ bool CLevel::Connect2Server(const char* options)
 	while (!net_IsSyncronised())
 	{
 		Sleep(1);
+		// For coop host (server in same process), ping replies are buffered via SendTo_Buf()
+		// and must be flushed explicitly — otherwise the sync thread waits forever.
+		if (Server) Server->Flush_Clients_Buffers();
 		if (net_Disconnected)
 		{
 			OnConnectRejected();
