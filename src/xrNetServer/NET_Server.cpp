@@ -376,25 +376,25 @@ IPureServer::EConnect IPureServer::Connect(LPCSTR options, GameDescriptionData& 
 			dpAppDesc.pwszPassword = SessionPasswordUNICODE;
 		};
 
-		// Create our IDirectPlay8Address Device Address, --- Set the SP for our Device Address
-		net_Address_device = NULL;
-		CHK_DX(
-			CoCreateInstance (XR_GUID(CLSID_DirectPlay8Address),NULL, CLSCTX_INPROC_SERVER, XR_GUID(IID_IDirectPlay8Address),(LPVOID*) &
-				net_Address_device ));
-		CHK_DX(net_Address_device->SetSP (bSimulator? &CLSID_NETWORKSIMULATOR_DP8SP_TCPIP : &XR_GUID(CLSID_DP8SP_TCPIP) ));
-
-		DWORD dwTraversalMode = DPNA_TRAVERSALMODE_NONE;
-		CHK_DX(
-			net_Address_device->AddComponent(DPNA_KEY_TRAVERSALMODE, &dwTraversalMode, sizeof(dwTraversalMode),
-				DPNA_DATATYPE_DWORD));
-
 		HRESULT HostSuccess = S_FALSE;
 		// We are now ready to host the app and will try different ports
 		psNET_Port = dwServerPort;
+		net_Address_device = NULL;
 		while (HostSuccess != S_OK)
 		{
+			// Recreate the address object each iteration — IDirectPlay8Address accumulates
+			// AddComponent() calls without replacement, so reusing it poisons subsequent
+			// Host() attempts with multiple PORT components.
+			_RELEASE(net_Address_device);
 			CHK_DX(
-				net_Address_device->AddComponent (DPNA_KEY_PORT, &psNET_Port, sizeof(psNET_Port), DPNA_DATATYPE_DWORD
+				CoCreateInstance(XR_GUID(CLSID_DirectPlay8Address), NULL, CLSCTX_INPROC_SERVER,
+					XR_GUID(IID_IDirectPlay8Address), (LPVOID*)&net_Address_device));
+			CHK_DX(net_Address_device->SetSP(bSimulator ? &CLSID_NETWORKSIMULATOR_DP8SP_TCPIP : &XR_GUID(CLSID_DP8SP_TCPIP)));
+			DWORD dwTraversalMode = DPNA_TRAVERSALMODE_NONE;
+			CHK_DX(net_Address_device->AddComponent(DPNA_KEY_TRAVERSALMODE, &dwTraversalMode,
+				sizeof(dwTraversalMode), DPNA_DATATYPE_DWORD));
+			CHK_DX(
+				net_Address_device->AddComponent(DPNA_KEY_PORT, &psNET_Port, sizeof(psNET_Port), DPNA_DATATYPE_DWORD
 				));
 
 			HostSuccess = NET->Host
