@@ -222,6 +222,7 @@ IPureServer::IPureServer(CTimer* timer, BOOL Dedicated)
 	SV_Client = NULL;
 	NET = NULL;
 	net_Address_device = NULL;
+	psNET_Port = 0;
 	pSvNetLog = NULL; //xr_new<INetLog>("logs\\net_sv_log.log", TimeGlobal(device_timer));
 #ifdef DEBUG
 	sender_functor_invoked = false;
@@ -406,16 +407,20 @@ IPureServer::EConnect IPureServer::Connect(LPCSTR options, GameDescriptionData& 
 				0); // dwFlags
 			if (HostSuccess != S_OK)
 			{
-				//			xr_string res = Debug.error2string(HostSuccess);
+				// Log actual HRESULT — if 0x80158003 (DPNERR_ALREADYINITIALIZED) appears, it means
+				// Close() was not called between Host() attempts, which is the historical root-cause
+				// of "all ports BUSY" after a single real failure.
+				Msg("! IPureServer : port %d is BUSY! (hr=0x%08X)", psNET_Port, (u32)HostSuccess);
+
+				// DP8 spec: must call Close() before calling Host() again.
+				// Without this, every subsequent Host() returns DPNERR_ALREADYINITIALIZED
+				// regardless of the port, making all retry ports appear busy.
+				NET->Close(0);
+				// Close() resets to post-Initialize state; re-apply server player info.
+				CHK_DX(NET->SetServerInfo(&dpPlayerInfo, NULL, NULL, DPNSETSERVERINFO_SYNC));
+
 				if (bPortWasSet)
-				{
-					Msg("! IPureServer : port %d is BUSY!", psNET_Port);
 					return ErrConnect;
-				}
-				else
-				{
-					Msg("! IPureServer : port %d is BUSY!", psNET_Port);
-				}
 
 				psNET_Port++;
 				if (psNET_Port > END_PORT_LAN)
