@@ -70,7 +70,7 @@ local function log(fmt, ...)
     local msg = strformat(fmt, ...)
     table.insert(state.log, msg)
     if #state.log > state.log_max then table.remove(state.log, 1) end
-    Msg("[ALifeTrade] %s", msg)
+    printf("[ALifeTrade] %s", msg)
 end
 
 -- ─── Спавн ───────────────────────────────────────────────────────────────────
@@ -95,7 +95,7 @@ local function give_item_offline(owner_id, section)
     local se_owner = alife():object(owner_id)
     if not se_owner then log("ОШИБКА: owner %d не найден в alife", owner_id); return end
     local pos = se_owner.position
-    local lv  = se_owner:level_vertex_id and se_owner:level_vertex_id() or db.actor:level_vertex_id()
+    local lv  = se_owner.level_vertex_id and se_owner:level_vertex_id() or db.actor:level_vertex_id()
     local gv  = se_owner.m_tGraphID or db.actor:game_vertex_id()
     local item = alife():create(section, pos, lv, gv, owner_id)
     if item then log("  + [%s] id=%d → npc %d", section, item.id, owner_id)
@@ -352,19 +352,19 @@ function debug_alife_trade.start_test()     start_test()     end
 function debug_alife_trade.stop_test()      stop_test()      end
 
 function debug_alife_trade.print_status()
-    Msg("[trade_alife] running=%s zone=%s seller=%s buyer=%s",
+    printf("[trade_alife] running=%s zone=%s seller=%s buyer=%s",
         tostring(state.running),
         tostring(state.zone_id),
         tostring(state.seller_id),
         tostring(state.buyer_id))
     if state.zone_id then
-        Msg("  seller terrain=%s  buyer terrain=%s",
+        printf("  seller terrain=%s  buyer terrain=%s",
             tostring(state._seller_terrain), tostring(state._buyer_terrain))
     end
 end
 
 function debug_alife_trade.print_log()
-    Msg("=== trade_alife log (%d lines) ===", #state.log)
-    for _, line in ipairs(state.log) do Msg(line) end
-    Msg("=== end trade_alife log ===")
+    printf("=== trade_alife log (%d lines) ===", #state.log)
+    for _, line in ipairs(state.log) do printf(line) end
+    printf("=== end trade_alife log ===")
 end

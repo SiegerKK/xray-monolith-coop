@@ -13,7 +13,7 @@
 --     idle → received_request → reviewing → accepted/declined
 --     → waiting_buyer → sold
 --
--- Все события пишутся в Msg() (log.txt) и доступны через get_sessions().
+-- Все события пишутся в printf() (log.txt) и доступны через get_sessions().
 --
 -- Зависимости: npc_trade.script (для финального transfer_item/money)
 -------------------------------------------------------------------------------
@@ -56,7 +56,7 @@ local sessions = {}
 local function tlog(session, msg)
     local line = strformat("[TRADE] %s", msg)
     table.insert(session.log, line)
-    Msg(line)
+    printf(line)
 end
 
 --- Посчитать оружия в инвентаре онлайн-объекта.
@@ -275,7 +275,7 @@ end
 --- @param seller_id number  ID продавца (НПЦ с оружием)
 function npc_trade_negotiation.start(buyer_id, seller_id)
     if sessions[buyer_id] then
-        Msg("[TRADE] Сессия для покупателя %d уже существует", buyer_id)
+        printf("[TRADE] Сессия для покупателя %d уже существует", buyer_id)
         return
     end
     sessions[buyer_id] = {
@@ -290,7 +290,7 @@ function npc_trade_negotiation.start(buyer_id, seller_id)
         log            = {},
         done           = false,
     }
-    Msg("[TRADE] Сессия запущена: покупатель=%d продавец=%d", buyer_id, seller_id)
+    printf("[TRADE] Сессия запущена: покупатель=%d продавец=%d", buyer_id, seller_id)
 end
 
 --- Обновить все активные сессии (вызывать из AddUniqueCall или actor_on_update).
@@ -323,5 +323,5 @@ end
 --- Сбросить все сессии (очищает таблицу без замены ссылки).
 function npc_trade_negotiation.clear()
     for k in pairs(sessions) do sessions[k] = nil end
-    Msg("[TRADE] Все сессии очищены")
+    printf("[TRADE] Все сессии очищены")
 end

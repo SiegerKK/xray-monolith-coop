@@ -55,7 +55,7 @@ local function warn_missing(section, key)
     local full = section .. "." .. key
     if not warned[full] then
         warned[full] = true
-        Msg("[npc_trade_config] WARNING: key '%s' not found in [%s] — using built-in default",
+        printf("[npc_trade_config] WARNING: key '%s' not found in [%s] — using built-in default",
             key, section)
     end
 end
@@ -103,7 +103,7 @@ local function load_core()
         approach_timeout_steps = r_int   (SEC_CORE, "approach_timeout_steps", DEFAULTS.approach_timeout_steps),
         close_enough_m         = r_float (SEC_CORE, "close_enough_m",         DEFAULTS.close_enough_m),
     }
-    Msg("[npc_trade_config] core loaded: price=%d accept=%d%% buyer_score=%.1f seller_score=%.1f",
+    printf("[npc_trade_config] core loaded: price=%d accept=%d%% buyer_score=%.1f seller_score=%.1f",
         _core.weapon_price, _core.accept_chance,
         _core.suitable_buyer, _core.suitable_seller)
 end
@@ -115,7 +115,7 @@ local function load_debug()
         buyer_money     = r_int   (SEC_DEBUG, "buyer_money",     DEFAULTS_DEBUG.buyer_money),
         setup_delay_ms  = r_int   (SEC_DEBUG, "setup_delay_ms",  DEFAULTS_DEBUG.setup_delay_ms),
     }
-    Msg("[npc_trade_config] debug loaded: stalker=%s wpn=%s money=%d delay=%dms",
+    printf("[npc_trade_config] debug loaded: stalker=%s wpn=%s money=%d delay=%dms",
         _debug.stalker_section, _debug.weapon_section,
         _debug.buyer_money, _debug.setup_delay_ms)
 end
@@ -133,7 +133,7 @@ function npc_trade_config.get(key)
     if v == nil then
         local def = DEFAULTS[key]
         if def ~= nil then
-            Msg("[npc_trade_config] ERROR: core key '%s' missing in cache, using default=%s",
+            printf("[npc_trade_config] ERROR: core key '%s' missing in cache, using default=%s",
                 tostring(key), tostring(def))
             return def
         end
@@ -151,7 +151,7 @@ function npc_trade_config.get_debug(key)
     if v == nil then
         local def = DEFAULTS_DEBUG[key]
         if def ~= nil then
-            Msg("[npc_trade_config] ERROR: debug key '%s' missing in cache, using default=%s",
+            printf("[npc_trade_config] ERROR: debug key '%s' missing in cache, using default=%s",
                 tostring(key), tostring(def))
             return def
         end
@@ -165,7 +165,7 @@ function npc_trade_config.reload()
     _core  = nil
     _debug = nil
     warned = {}
-    Msg("[npc_trade_config] cache cleared — will reload on next access")
+    printf("[npc_trade_config] cache cleared — will reload on next access")
 end
 
 -- ─── Публичные helper'ы для вызова через консоль (run_string) ───────────────
@@ -189,15 +189,15 @@ local CORE_KEYS  = {
 local DEBUG_KEYS = { "stalker_section", "weapon_section", "buyer_money", "setup_delay_ms" }
 
 function npc_trade_config.list_all()
-    Msg("=== [npc_trade] (core) ===")
+    printf("=== [npc_trade] (core) ===")
     for _, k in ipairs(CORE_KEYS) do
         local ok, v = pcall(npc_trade_config.get, k)
-        Msg("  %-30s = %s", k, ok and tostring(v) or ("ERROR: "..tostring(v)))
+        printf("  %-30s = %s", k, ok and tostring(v) or ("ERROR: "..tostring(v)))
     end
-    Msg("=== [npc_trade_debug] ===")
+    printf("=== [npc_trade_debug] ===")
     for _, k in ipairs(DEBUG_KEYS) do
         local ok, v = pcall(npc_trade_config.get_debug, k)
-        Msg("  %-30s = %s", k, ok and tostring(v) or ("ERROR: "..tostring(v)))
+        printf("  %-30s = %s", k, ok and tostring(v) or ("ERROR: "..tostring(v)))
     end
 end
 
@@ -205,8 +205,8 @@ function npc_trade_config.get_key(key)
     local ok, v = pcall(npc_trade_config.get, key)
     if not ok then ok, v = pcall(npc_trade_config.get_debug, key) end
     if ok then
-        Msg("[npc_trade_config] %s = %s", key, tostring(v))
+        printf("[npc_trade_config] %s = %s", key, tostring(v))
     else
-        Msg("[npc_trade_config] ключ '%s' не найден ни в core, ни в debug", key)
+        printf("[npc_trade_config] ключ '%s' не найден ни в core, ни в debug", key)
     end
 end

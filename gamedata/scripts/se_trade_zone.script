@@ -69,7 +69,7 @@ class "se_trade_zone" (se_base)
 function se_trade_zone:__init(section) super(section)
     self.registered = {}      -- { npc_id → "buyer"|"seller" }
     self.task_obj   = nil     -- CALifeSmartTerrainTask (set when zone goes online)
-    Msg("[TradeZone] created section='%s'", section)
+    printf("[TradeZone] created section='%s'", section)
 end
 
 --- enabled(npc_se) → bool
@@ -98,11 +98,11 @@ function se_trade_zone:suitable(npc_se)
     local min = cfg("min_weapons_to_sell")
     if wc == 0 then
         local score = cfg("suitable_buyer")
-        Msg("[TradeZone] suitable: npc=%d is BUYER (0 weapons) → %.1f", npc_se.id, score)
+        printf("[TradeZone] suitable: npc=%d is BUYER (0 weapons) → %.1f", npc_se.id, score)
         return score
     elseif wc >= min then
         local score = cfg("suitable_seller")
-        Msg("[TradeZone] suitable: npc=%d is SELLER (%d weapons) → %.1f", npc_se.id, wc, score)
+        printf("[TradeZone] suitable: npc=%d is SELLER (%d weapons) → %.1f", npc_se.id, wc, score)
         return score
     end
     -- NPC has weapons but fewer than min_weapons_to_sell: skip
@@ -117,7 +117,7 @@ function se_trade_zone:task(npc_se)
     -- Build the task lazily on first call (game vertex is available after spawn)
     if not self.task_obj then
         self.task_obj = CALifeSmartTerrainTask(self.m_tGraphID, self:level_vertex_id())
-        Msg("[TradeZone] task created: gvid=%d lvid=%d",
+        printf("[TradeZone] task created: gvid=%d lvid=%d",
             self.m_tGraphID, self:level_vertex_id())
     end
     return self.task_obj
@@ -132,7 +132,7 @@ function se_trade_zone:register_npc(npc_se)
     local wc   = count_weapons_offline(npc_se)
     local role = (wc == 0) and "buyer" or "seller"
     self.registered[npc_se.id] = role
-    Msg("[TradeZone] register_npc: id=%d role=%s weapons=%d", npc_se.id, role, wc)
+    printf("[TradeZone] register_npc: id=%d role=%s weapons=%d", npc_se.id, role, wc)
 
     -- Check if we now have at least one buyer and one seller
     local buyer_id, seller_id
@@ -142,7 +142,7 @@ function se_trade_zone:register_npc(npc_se)
     end
 
     if buyer_id and seller_id then
-        Msg("[TradeZone] Both parties registered! Buyer=%d Seller=%d — executing trade",
+        printf("[TradeZone] Both parties registered! Buyer=%d Seller=%d — executing trade",
             buyer_id, seller_id)
         self:_execute_trade(buyer_id, seller_id)
     end
@@ -151,7 +151,7 @@ end
 --- unregister_npc(npc_se)
 ---@param npc_se cse_alife_creature_abstract
 function se_trade_zone:unregister_npc(npc_se)
-    Msg("[TradeZone] unregister_npc: id=%d", npc_se.id)
+    printf("[TradeZone] unregister_npc: id=%d", npc_se.id)
     self.registered[npc_se.id] = nil
 end
 
@@ -167,7 +167,7 @@ function se_trade_zone:_execute_trade(buyer_id, seller_id)
         -- NPCs might still be offline — wait until they come online.
         -- We schedule a retry by NOT clearing the registered table;
         -- register_npc() will fire again when the NPC transitions online.
-        Msg("[TradeZone] trade deferred: buyer online=%s seller online=%s",
+        printf("[TradeZone] trade deferred: buyer online=%s seller online=%s",
             tostring(buyer ~= nil), tostring(seller ~= nil))
         return
     end
@@ -183,13 +183,13 @@ function se_trade_zone:_execute_trade(buyer_id, seller_id)
     end, seller)
 
     if not weapon_obj then
-        Msg("[TradeZone] _execute_trade: seller %d has no weapon online!", seller_id)
+        printf("[TradeZone] _execute_trade: seller %d has no weapon online!", seller_id)
         return
     end
 
     local ok, msg = npc_trade.sell_item(seller_id, buyer_id, weapon_obj:id(), cfg("weapon_price"))
     if ok then
-        Msg("[TradeZone] TRADE COMPLETE: %s", msg)
+        printf("[TradeZone] TRADE COMPLETE: %s", msg)
         -- Unregister both so the zone doesn't try again
         local sim = alife()
         local se_buyer  = sim and sim:object(buyer_id)
@@ -197,7 +197,7 @@ function se_trade_zone:_execute_trade(buyer_id, seller_id)
         if se_buyer  then self:unregister_npc(se_buyer)  end
         if se_seller then self:unregister_npc(se_seller) end
     else
-        Msg("[TradeZone] _execute_trade FAILED: %s", msg)
+        printf("[TradeZone] _execute_trade FAILED: %s", msg)
     end
 end
 

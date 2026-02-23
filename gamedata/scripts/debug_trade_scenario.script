@@ -69,7 +69,7 @@ local function slog(fmt, ...)
     if #scenario.log > scenario.log_max then
         table.remove(scenario.log, 1)
     end
-    Msg("[SCENARIO] %s", msg)
+    printf("[SCENARIO] %s", msg)
 end
 
 -- ─── Спавн ───────────────────────────────────────────────────────────────────
@@ -351,21 +351,21 @@ function debug_trade_scenario.start_scenario() start_scenario() end
 function debug_trade_scenario.stop_scenario()  stop_scenario()  end
 
 function debug_trade_scenario.print_status()
-    Msg("[trade_scenario] running=%s setup_at=%s seller=%s buyer=%s",
+    printf("[trade_scenario] running=%s setup_at=%s seller=%s buyer=%s",
         tostring(scenario.running),
         tostring(scenario.setup_at),
         tostring(scenario.seller_id),
         tostring(scenario.buyer_id))
     for sid, s in pairs(npc_trade_negotiation.get_sessions()) do
         -- buyer_si/seller_si — индекс текущего состояния (state index) в BUYER_STATES/SELLER_STATES
-        Msg("  session[%s]: buyer=%s seller=%s done=%s buyer_state_idx=%s seller_state_idx=%s",
+        printf("  session[%s]: buyer=%s seller=%s done=%s buyer_state_idx=%s seller_state_idx=%s",
             tostring(sid), tostring(s.buyer_id), tostring(s.seller_id),
             tostring(s.done), tostring(s.buyer_si), tostring(s.seller_si))
     end
 end
 
 function debug_trade_scenario.print_log()
-    Msg("=== trade_scenario log (%d lines) ===", #scenario.log)
-    for _, line in ipairs(scenario.log) do Msg(line) end
-    Msg("=== end trade_scenario log ===")
+    printf("=== trade_scenario log (%d lines) ===", #scenario.log)
+    for _, line in ipairs(scenario.log) do printf(line) end
+    printf("=== end trade_scenario log ===")
 end
