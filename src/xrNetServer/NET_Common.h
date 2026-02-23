@@ -12,11 +12,12 @@ struct GameDescriptionData
 };
 
 /**/
-#define START_PORT_LAN_CL 1234
-#define START_PORT_LAN_SV 1235
-#define END_PORT_LAN 1236
-#define START_PORT 1237
-#define END_PORT 1238
+// Coop port range: IANA-unregistered 27690-27699 (10 slots for TIME_WAIT recovery)
+#define START_PORT_LAN_CL 27690
+#define START_PORT_LAN_SV 27691
+#define END_PORT_LAN      27699
+#define START_PORT        27690
+#define END_PORT          27699
 /**/
 
 #define NET_MERGE_PACKETS               1
