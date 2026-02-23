@@ -26,6 +26,13 @@
 --
 -- Открыть: F7 → F7 → Debug → ALife Trade Test
 --
+-- Управление из консоли (команда run_string — встроенная C++ команда):
+--   run_string debug_alife_trade.clear_stalkers()
+--   run_string debug_alife_trade.start_test()
+--   run_string debug_alife_trade.stop_test()
+--   run_string debug_alife_trade.print_status()
+--   run_string debug_alife_trade.print_log()
+--
 -- Зависимости: se_trade_zone.script, npc_trade.script, _imgui_groups.script
 -------------------------------------------------------------------------------
 
@@ -322,54 +329,42 @@ ImGui.Groups.Unique.Widget(function()
     ImGui.EndChild()
 
     ImGui.TextDisabled("F7 → F7 → Debug → ALife Trade Test")
-    ImGui.TextDisabled("Консоль: trade_alife start | stop | clear | status | log | help")
+    ImGui.TextDisabled("Консоль: run_string debug_alife_trade.start_test()")
     ImGui.End()
 end)
 
--- ─── Консольные команды ───────────────────────────────────────────────────────
+-- ─── Публичные функции для вызова через консоль (run_string) ─────────────────
 --
--- trade_alife start   — заспавнить зону + 2 сталкеров
--- trade_alife stop    — убрать зону и сталкеров
--- trade_alife clear   — удалить всех несюжетных сталкеров с карты
--- trade_alife status  — вывести ID объектов и terrain assignment
--- trade_alife log     — дамп лога в консоль
--- trade_alife help    — справка
+-- Консоль X-Ray понимает только зарегистрированные C++ команды.
+-- Используйте встроенную команду run_string:
 --
-local function on_console(cmd, arg1)
-    if cmd ~= "trade_alife" then return end
-    local sub = (arg1 or "help"):lower()
+--   run_string debug_alife_trade.clear_stalkers()
+--   run_string debug_alife_trade.start_test()
+--   run_string debug_alife_trade.stop_test()
+--   run_string debug_alife_trade.print_status()
+--   run_string debug_alife_trade.print_log()
+--
 
-    if sub == "start" then
-        start_test()
-    elseif sub == "stop" then
-        stop_test()
-    elseif sub == "clear" then
-        clear_stalkers()
-    elseif sub == "status" then
-        Msg("trade_alife: running=%s zone=%s seller=%s buyer=%s",
-            tostring(state.running),
-            tostring(state.zone_id),
-            tostring(state.seller_id),
-            tostring(state.buyer_id))
-        if state.zone_id then
-            Msg("  seller terrain=%s  buyer terrain=%s",
-                tostring(state._seller_terrain), tostring(state._buyer_terrain))
-        end
-    elseif sub == "log" then
-        Msg("=== trade_alife log (%d lines) ===", #state.log)
-        for _, line in ipairs(state.log) do Msg(line) end
-        Msg("=== end trade_alife log ===")
-    elseif sub == "help" then
-        Msg("trade_alife <sub>:")
-        Msg("  start  — заспавнить TradeZone + 2 сталкеров, ALife сам назначит задачу")
-        Msg("  stop   — убрать всё")
-        Msg("  clear  — очистить несюжетных сталкеров (рекомендуется перед start)")
-        Msg("  status — ID объектов и текущий smart_terrain_id")
-        Msg("  log    — дамп лога в консоль/log.txt")
-        Msg("  help   — эта справка")
-    else
-        Msg("trade_alife: неизвестная команда '%s'. Введите 'trade_alife help'.", sub)
+debug_alife_trade = debug_alife_trade or {}
+
+function debug_alife_trade.clear_stalkers() clear_stalkers() end
+function debug_alife_trade.start_test()     start_test()     end
+function debug_alife_trade.stop_test()      stop_test()      end
+
+function debug_alife_trade.print_status()
+    Msg("[trade_alife] running=%s zone=%s seller=%s buyer=%s",
+        tostring(state.running),
+        tostring(state.zone_id),
+        tostring(state.seller_id),
+        tostring(state.buyer_id))
+    if state.zone_id then
+        Msg("  seller terrain=%s  buyer terrain=%s",
+            tostring(state._seller_terrain), tostring(state._buyer_terrain))
     end
 end
 
-RegisterScriptCallback("on_console_execute", on_console)
+function debug_alife_trade.print_log()
+    Msg("=== trade_alife log (%d lines) ===", #state.log)
+    for _, line in ipairs(state.log) do Msg(line) end
+    Msg("=== end trade_alife log ===")
+end
