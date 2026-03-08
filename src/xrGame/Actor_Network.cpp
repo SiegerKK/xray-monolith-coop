@@ -59,7 +59,7 @@ CActor* g_actor = NULL;
 
 CActor* Actor()
 {
-	R_ASSERT2(GameID() == eGameIDSingle, "Actor() method invokation must be only in Single Player game!");
+	R_ASSERT2(IsGameTypeSingleOrCoop(), "Actor() method invocation must be only in Single Player or Cooperative game!");
 	VERIFY(g_actor);
 	/*if (GameID() != eGameIDSingle) 
 		VERIFY	(g_actor == Level().CurrentControlEntity());*/
@@ -690,14 +690,13 @@ BOOL CActor::net_Spawn(CSE_Abstract* DC)
 	m_bWasHitted = false;
 	m_dwILastUpdateTime = 0;
 
-	if (IsGameTypeSingle())
+	if (IsGameTypeSingleOrCoop())
 	{
 		Level().MapManager().AddMapLocation("actor_location", ID());
 		Level().MapManager().AddMapLocation("actor_location_p", ID());
 
 		m_statistic_manager = xr_new<CActorStatisticMgr>();
 	}
-
 
 	spatial.type |= STYPE_REACTTOSOUND;
 	psHUD_Flags.set(HUD_WEAPON_RT,TRUE);
