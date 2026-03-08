@@ -230,6 +230,9 @@ LPCSTR GameTypeToString(EGameIDs gt, bool bShort)
 	case eGameIDTeamDominationZone:
 		return (bShort) ? "tdz" : "teamdominationzone";
 		break;
+	case eGameIDCooperative:
+		return (bShort) ? "coop" : "cooperative";
+		break;
 	default:
 		return "---";
 	}
@@ -251,6 +254,8 @@ EGameIDs ParseStringToGameType(LPCSTR str)
 		return eGameIDDominationZone;
 	else if (!xr_strcmp(str, "teamdominationzone"))
 		return eGameIDTeamDominationZone;
+	else if (!xr_strcmp(str, "cooperative") || !xr_strcmp(str, "coop"))
+		return eGameIDCooperative;
 	else
 		return eGameIDNoGame; //EGameIDs
 }
@@ -262,7 +267,7 @@ void CGamePersistent::UpdateGameType()
 	m_game_params.m_e_game_type = ParseStringToGameType(m_game_params.m_game_type);
 
 
-	if (m_game_params.m_e_game_type == eGameIDSingle)
+	if (m_game_params.m_e_game_type == eGameIDSingle || m_game_params.m_e_game_type == eGameIDCooperative)
 		g_current_keygroup = _sp;
 	else
 		g_current_keygroup = _mp;

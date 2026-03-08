@@ -219,6 +219,8 @@
 #define CLSID_CL_GAME_TEAMDEATHMATCH	MK_CLSID('C','L','_','T','D','M',' ',' ')
 #define CLSID_CL_GAME_ARTEFACTHUNT		MK_CLSID('C','L','_','A','H','U','N','T')
 #define CLSID_CL_GAME_CAPTURETHEARTEFACT	MK_CLSID('C','L','_','C','T','A',' ',' ')
+#define CLSID_SV_GAME_COOP				MK_CLSID('S','V','_','C','O','O','P',' ')
+#define CLSID_CL_GAME_COOP				MK_CLSID('C','L','_','C','O','O','P',' ')
 
 // Game UI types
 #define CLSID_GAME_UI_SINGLE			MK_CLSID('U','I','_','S','I','N','G','L')
