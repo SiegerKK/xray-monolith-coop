@@ -2398,6 +2398,9 @@ static const u32 COOP_CONNECT_NAME_PFX    = sizeof("/name=") - 1u;         // 6
 static const u32 COOP_CONNECT_PORT_SFX    = sizeof("/port=1235") - 1u;     // 10
 static const u32 COOP_CONNECT_OVERHEAD    = COOP_CONNECT_NAME_PFX + COOP_PLAYER_NAME_MAX + COOP_CONNECT_PORT_SFX + 1u;
 static const u32 COOP_CONNECT_HOST_MAX    = 256u - COOP_CONNECT_OVERHEAD;
+// Guard: COOP_CONNECT_PORT_SFX assumes START_PORT_LAN_SV has exactly 4 digits.
+static_assert(START_PORT_LAN_SV >= 1000 && START_PORT_LAN_SV <= 9999,
+    "COOP_CONNECT_PORT_SFX assumes a 4-digit port number; update sizeof literal if port changes");
 
 // Replaces characters that are illegal in op_server/op_client strings with '_'.
 // The '/' character is used as a field separator by the options parser, and
@@ -2464,7 +2467,7 @@ public:
             // New game
             xr_sprintf(op_server, "all/coop/alife/new");
         }
-        xr_sprintf(op_client, "localhost/name=%s", player_name);
+        xr_sprintf(op_client, "localhost/name=%s/port=%d", player_name, START_PORT_LAN_SV);
 
         if (g_pGameLevel)
             Engine.Event.Defer("KERNEL:disconnect");

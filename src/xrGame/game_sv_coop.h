@@ -10,5 +10,4 @@ public:
     game_sv_Coop();
 
     virtual LPCSTR type_name() const { return "coop"; }
-    virtual BOOL CanHaveFriendlyFire() { return FALSE; }
 };
