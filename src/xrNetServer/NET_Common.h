@@ -11,11 +11,16 @@ struct GameDescriptionData
 };
 
 /**/
-#define START_PORT_LAN_CL 1234
-#define START_PORT_LAN_SV 1235
-#define END_PORT_LAN 1236
-#define START_PORT 1237
-#define END_PORT 1238
+// Coop port range.  Moved to the high private-use range (50000+) so we don't
+// collide with the many applications that register 1234-1238.  The server and
+// client each scan up to END_PORT_LAN, giving 20 attempts before giving up.
+// START_PORT / END_PORT are used only when portsv=/portcl= options are given
+// explicitly (legacy CoC LAN mode); they cover the same range.
+#define START_PORT_LAN_CL 50000
+#define START_PORT_LAN_SV 50001
+#define END_PORT_LAN      50019
+#define START_PORT        50020
+#define END_PORT          50039
 /**/
 
 #define NET_MERGE_PACKETS               1

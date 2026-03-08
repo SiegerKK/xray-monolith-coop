@@ -2391,16 +2391,16 @@ static const u32 COOP_HOST_SAVE_NAME_MAX = 512u - COOP_HOST_SUFFIX_LEN;
 
 // Maximum characters allowed for the IP/hostname in coop_connect.
 // op_client is string256 (256 bytes).  The format "%s/name=%s/port=%d" with
-// port=START_PORT_LAN_SV expands to: host + "/name=" + player_name + "/port=1235" + null.
+// port=START_PORT_LAN_SV expands to: host + "/name=" + player_name + "/port=50001" + null.
 // Each component's size is derived from the literal/constant used in the sprintf below.
 static const u32 COOP_PLAYER_NAME_MAX     = sizeof(string64) - 1u;         // 63
 static const u32 COOP_CONNECT_NAME_PFX    = sizeof("/name=") - 1u;         // 6
-static const u32 COOP_CONNECT_PORT_SFX    = sizeof("/port=1235") - 1u;     // 10
+static const u32 COOP_CONNECT_PORT_SFX    = sizeof("/port=50001") - 1u;    // 11
 static const u32 COOP_CONNECT_OVERHEAD    = COOP_CONNECT_NAME_PFX + COOP_PLAYER_NAME_MAX + COOP_CONNECT_PORT_SFX + 1u;
 static const u32 COOP_CONNECT_HOST_MAX    = 256u - COOP_CONNECT_OVERHEAD;
-// Guard: COOP_CONNECT_PORT_SFX assumes START_PORT_LAN_SV has exactly 4 digits.
-static_assert(START_PORT_LAN_SV >= 1000 && START_PORT_LAN_SV <= 9999,
-    "COOP_CONNECT_PORT_SFX assumes a 4-digit port number; update sizeof literal if port changes");
+// Guard: COOP_CONNECT_PORT_SFX assumes START_PORT_LAN_SV has exactly 5 digits.
+static_assert(START_PORT_LAN_SV >= 10000 && START_PORT_LAN_SV <= 65535,
+    "COOP_CONNECT_PORT_SFX assumes a 5-digit port number; update sizeof literal if port changes");
 
 // Replaces characters that are illegal in op_server/op_client strings with '_'.
 // The '/' character is used as a field separator by the options parser, and
