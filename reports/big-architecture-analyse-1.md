@@ -1375,3 +1375,664 @@ game_sv_Coop::change_level():
 ---
 
 *Документ обновлён: глубокий анализ компонентов и архитектурное предложение по кооперативному режиму (март 2026)*
+
+---
+
+## 14. Детальный анализ для Фазы 1: консольные команды `coop_host` и `coop_connect`
+
+### 14.1 Как работает существующая система консольных команд (точные ссылки)
+
+#### 14.1.1 Объявление команды — макросы
+
+**Файл**: `src/xrEngine/xr_ioc_cmd.h`, строки 3–7
+```cpp
+#define CMD1(cls, p1)  { static cls x##cls(p1); Console->AddCommand(&x##cls); }
+#define CMD2(cls, p1, p2) { ... }
+// и т.д. до CMD4
+```
+
+Каждая команда — это C++-класс, унаследованный от `IConsole_Command` с методом `Execute(LPCSTR args)`.
+
+#### 14.1.2 Регистрация команд в xrGame
+
+**Файл**: `src/xrGame/console_commands.cpp`, функция `CCC_RegisterCommands()` (строка 2378)  
+**Вызов**: `src/xrGame/xrGame.cpp`, строка 56 — вызывается при инициализации `xrGame.dll`.
+
+Именно сюда нужно добавить регистрацию `CMD1(CCC_CoopHost, "coop_host")` и `CMD1(CCC_CoopConnect, "coop_connect")`.
+
+#### 14.1.3 Существующая команда `start` как образец
+
+**Файл**: `src/xrEngine/xr_ioc_cmd.cpp`, класс `CCC_Start` (строка 330)
+
+Команда `start` принимает аргументы вида:
+```
+start server(<map>/<type>[/параметры...]) client(<host>[/name=...][/port=...])
+```
+
+Она вызывает:
+```cpp
+Engine.Event.Defer("KERNEL:start",
+    u64(xr_strlen(op_server) ? xr_strdup(op_server) : 0),
+    u64(xr_strdup(op_client)));
+```
+
+**Файл**: `src/xrEngine/x_ray.cpp`, обработчик `eStart` (строка ~1400)
+```cpp
+g_pGamePersistent->PreStart(op_server);                // парсит параметры
+g_pGameLevel = NEW_INSTANCE(CLSID_GAME_LEVEL);         // создаёт уровень
+g_pGamePersistent->Start(op_server);                   // применяет параметры
+g_pGameLevel->net_Start(op_server, op_client);         // запускает сервер+клиент
+```
+
+---
+
+### 14.2 Полная трассировка команды `start server(...) client(...)` по коду
+
+```
+Пользователь вводит в консоль:
+  start server(l01_escape/single/alife/new) client(localhost/name=TestPlayer)
+      ↓
+CCC_Start::Execute(args)               [xr_ioc_cmd.cpp:373]
+  parse(op_server, args, "server")     → "l01_escape/single/alife/new"
+  parse(op_client, args, "client")     → "localhost/name=TestPlayer"
+  Engine.Event.Defer("KERNEL:start", op_server_copy, op_client_copy)
+      ↓
+CApplication::OnEvent(E=eStart, P1=op_server, P2=op_client) [x_ray.cpp:~1395]
+  g_pGamePersistent->PreStart(op_server)
+      ↓
+  IGame_Persistent::PreStart(op)       [IGame_Persistent.cpp:121]
+    m_game_params.parse_cmd_line(op)   → m_game_type = "single",
+                                          m_alife = "alife",
+                                          m_new_or_load = "new"
+      ↓
+  g_pGameLevel->net_Start(op_server, op_client) [Level_start.cpp]
+      ↓
+  CLevel::net_start1()                 [Level_start.cpp:~103]
+    if (!xr_strcmp(p.m_game_type, "single"))
+        Server = xr_new<xrServer>()    ← loopback сервер
+    else
+        Server = xr_new<xrGameSpyServer>()
+      ↓
+  CLevel::net_start2()                 [Level_start.cpp]
+    Server->Connect(m_caServerOptions, game_descr)
+      ↓
+  xrServer::Connect(session_name, ...)  [xrServer_Connect.cpp:38]
+    CLASS_ID clsid = game_GameState::getCLASS_ID("single", true)
+    game = NEW_INSTANCE(CLSID_SV_GAME_SINGLE)     ← game_sv_Single
+    game->Create(options)
+      ↓
+  game_sv_Single::Create(options)      [game_sv_single.cpp]
+    if (strstr(*options, "/alife"))
+        m_alife_simulator = new CALifeSimulator(...)
+      ↓
+  CLevel::net_start_client*()          [Level_network_start_client.cpp]
+    IPureClient::Connect(op_client, ...)
+      ↓
+  NET_Client::Connect(options, ...)    [NET_Client.cpp:~380]
+    server_name = "localhost"           ← извлекается из op_client
+    port = 1235                         ← START_PORT_LAN_SV
+    DirectPlay8 connect to server_name:port
+```
+
+---
+
+### 14.3 Формат строк `op_server` и `op_client`
+
+#### `op_server` — строка параметров сервера
+
+**Формат** (парсится через `IGame_Persistent::params::parse_cmd_line()`):
+```
+<map_name>/<game_type>/<alife_flag>/<new_or_load>[/ver=<version>][/estime=<time>]
+```
+
+Элементы разделены `/`, порядок важен:
+- `m_params[0]` = имя уровня/сохранения (`m_game_or_spawn`)
+- `m_params[1]` = тип игры (`m_game_type`) — `"single"`, `"deathmatch"`, ...
+- `m_params[2]` = ALife-флаг (`m_alife`) — `"alife"` или пусто
+- `m_params[3]` = режим загрузки (`m_new_or_load`) — `"new"` или `"load"`
+
+**Примеры**:
+```
+l01_escape/single/alife/new      ← новая игра на уровне l01_escape
+my_save/single/alife/load        ← загрузка сохранения my_save
+zaton/deathmatch                 ← DM на zaton
+```
+
+#### `op_client` — строка параметров клиента
+
+**Формат** (парсится в `NET_Client::Connect()`, `Level_start.cpp`):
+```
+<server_host>[/name=<player_name>][/port=<port>][/portcl=<client_port>][/psw=<password>]
+```
+
+**Примеры**:
+```
+localhost/name=TestPlayer        ← локальное подключение
+192.168.1.100/name=Player1/port=1235
+```
+
+---
+
+### 14.4 Подробный анализ того, что нужно изменить для `coop_host`
+
+#### 14.4.1 Что делает `coop_host`
+
+Команда `coop_host <save_name>` должна:
+1. Запустить сервер с типом игры `"coop"` (не `"single"`, не `"deathmatch"`)
+2. Загрузить указанное ALife-сохранение (или начать новую игру)
+3. Подключить локальный клиент как хоста (`localhost`)
+4. **Не использовать** `psNET_direct_connect = TRUE` (он отключает реальный сетевой стек)
+
+Итоговый вызов должен выглядеть:
+```cpp
+Engine.Event.Defer("KERNEL:start",
+    u64(xr_strdup("my_save/coop/alife/load")),    // op_server
+    u64(xr_strdup("localhost/name=PlayerName")));  // op_client
+```
+
+Но перед этим нужно выставить `psNET_direct_connect = FALSE`, чтобы DirectPlay создал реальный сервер (не loopback).
+
+#### 14.4.2 Файлы, которые нужно изменить
+
+**1. `src/xrServerEntities/gametype_chooser.h` — добавить `eGameIDCooperative`**
+
+```cpp
+enum EGameIDs {
+    eGameIDNoGame             = u32(0),
+    eGameIDSingle             = u32(1) << 0,
+    eGameIDDeathmatch         = u32(1) << 1,
+    eGameIDTeamDeathmatch     = u32(1) << 2,
+    eGameIDArtefactHunt       = u32(1) << 3,
+    eGameIDCaptureTheArtefact = u32(1) << 4,
+    eGameIDDominationZone     = u32(1) << 5,
+    eGameIDTeamDominationZone = u32(1) << 6,
+    eGameIDCooperative        = u32(1) << 7,  // ← НОВОЕ (следующий свободный бит после TeamDominationZone)
+};
+```
+
+**2. `src/xrGame/GamePersistent.cpp` — добавить "coop" в `ParseStringToGameType()`** (строка 238)
+
+```cpp
+EGameIDs ParseStringToGameType(LPCSTR str) {
+    if (!xr_strcmp(str, "single"))        return eGameIDSingle;
+    if (!xr_strcmp(str, "coop") ||
+        !xr_strcmp(str, "cooperative"))   return eGameIDCooperative;  // ← НОВОЕ
+    // ...
+}
+```
+
+**3. `src/xrGame/game_base.cpp` — добавить ветку в `getCLASS_ID()`** (строка ~248)
+
+```cpp
+case eGameIDCooperative:
+    return (isServer) ? TEXT2CLSID("SV_COOP") : TEXT2CLSID("CL_COOP");
+```
+
+**4. `src/xrServerEntities/clsid_game.h` — добавить CLSID константы**
+
+```cpp
+#define CLSID_SV_GAME_COOP  MK_CLSID('S','V','_','C','O','O','P',' ')
+#define CLSID_CL_GAME_COOP  MK_CLSID('C','L','_','C','O','O','P',' ')
+```
+
+**5. `src/xrGame/game_sv_coop.h` и `game_sv_coop.cpp` — НОВЫЙ ФАЙЛ** (заглушка для Фазы 1)
+
+```cpp
+// game_sv_coop.h — начальная заглушка
+class game_sv_Coop : public game_sv_Single {
+    typedef game_sv_Single inherited;
+public:
+    virtual LPCSTR type_name() const { return "coop"; }
+    virtual void   Create(shared_str& options);
+    // Фаза 1: только хост может подключиться
+    // Позже: разрешить внешние клиенты
+};
+```
+
+**6. `src/xrGame/game_cl_coop.h` и `game_cl_coop.cpp` — НОВЫЙ ФАЙЛ** (заглушка для Фазы 1)
+
+```cpp
+// game_cl_coop.h — начальная заглушка
+class game_cl_Coop : public game_cl_Single {
+    typedef game_cl_Single inherited;
+public:
+    virtual LPCSTR type_name() const { return "coop"; }
+    // Фаза 1: использует SP UI без изменений
+};
+```
+
+**7. `src/xrServerEntities/object_factory_register.cpp` — зарегистрировать классы** (строки ~208–221)
+
+```cpp
+add<game_sv_Coop>(CLSID_SV_GAME_COOP, "game_sv_coop");
+add<game_cl_Coop>(CLSID_CL_GAME_COOP, "game_cl_coop");
+```
+
+**8. `src/xrGame/Level_start.cpp` — разрешить coop использовать `xrServer`** (строки ~115–120)
+
+```cpp
+if (!xr_strcmp(p.m_game_type, "single") ||
+    !xr_strcmp(p.m_game_type, "coop"))    // ← НОВОЕ: coop использует базовый xrServer
+    Server = xr_new<xrServer>();
+else {
+    g_allow_heap_min = false;
+    Server = xr_new<xrGameSpyServer>();
+}
+```
+
+**9. `src/xrGame/console_commands.cpp` — добавить `CCC_CoopHost` и `CCC_CoopConnect`**
+
+---
+
+#### 14.4.3 Ключевая проблема: `psNET_direct_connect`
+
+**Файл**: `src/xrNetServer/NET_Shared.h`  
+**Переменная**: `extern BOOL psNET_direct_connect;`
+
+В одиночной игре:
+```cpp
+// NET_Client.cpp:~298
+if (!psNET_direct_connect) {
+    // Настраиваем реальный DirectPlay TCP/IP
+} else {
+    // Просто помечаем, что подключены
+}
+```
+
+В SP `psNET_direct_connect = TRUE` — пропускается весь сетевой стек. Для кооперации его нужно держать `FALSE`.
+
+**Проблема**: При `psNET_direct_connect = FALSE` и `server_name = "localhost"` DirectPlay создаёт реальный UDP-сокет и слушает на `START_PORT_LAN_SV = 1235`. Это работает для LAN, но через интернет нужны дополнительные меры (NAT traversal).
+
+**Для Фазы 1 (тест)**: `psNET_direct_connect = FALSE` + `localhost` — работает без изменений.
+
+---
+
+### 14.5 Подробный анализ того, что нужно изменить для `coop_connect`
+
+#### 14.5.1 Что делает `coop_connect`
+
+Команда `coop_connect [<ip>]` должна:
+1. Подключиться к существующему coop-серверу по IP
+2. Запустить клиентскую часть без запуска сервера (нет `op_server`)
+3. По умолчанию IP = `localhost` (для тестирования на одной машине)
+
+Итоговый вызов:
+```cpp
+Engine.Event.Defer("KERNEL:start",
+    u64(0),                                          // op_server = NULL → не запускать сервер
+    u64(xr_strdup("192.168.1.100/name=Player2"))); // op_client
+```
+
+Но текущий обработчик в `x_ray.cpp` требует `op_server` для части логики. Нужно проверить это:
+
+**Файл**: `src/xrEngine/x_ray.cpp`, строка ~1408:
+```cpp
+g_pGamePersistent->PreStart(op_server);  // если op_server == NULL, это проблема
+```
+
+**Файл**: `src/xrEngine/IGame_Persistent.cpp`:
+```cpp
+void IGame_Persistent::PreStart(LPCSTR op) {
+    string256 prev_type;
+    params new_game_params;
+    xr_strcpy(prev_type, m_game_params.m_game_type);
+    new_game_params.parse_cmd_line(op);  // если op == NULL → краш
+```
+
+**Вывод**: При подключении только как клиент (`op_server = NULL`) нужно либо:
+- Передать пустую строку `""` вместо NULL и защитить `parse_cmd_line` от пустой строки
+- Или передать минимальную строку типа `"/coop/alife"` без имени карты
+
+**Существующее решение в MP**: В multiplayer-режиме клиент подключается к серверу, получает имя карты и загружает её сам. Переменная `m_caServerOptions` остаётся пустой, `m_caClientOptions` содержит IP. Этот путь корректно работает:
+
+```cpp
+// Level_start.cpp::net_start1()
+if (m_caServerOptions.size()) {
+    // ... запуск сервера
+} else {
+    g_allow_heap_min = false; // ← только это, если нет op_server
+}
+```
+
+**Поэтому**: Команда `coop_connect` должна передавать только `op_client`, `op_server` = пустая строка.
+
+#### 14.5.2 Файлы, которые нужно изменить для `coop_connect`
+
+**1. `src/xrGame/console_commands.cpp` — добавить `CCC_CoopConnect`**
+
+```cpp
+// Ничего нового в движке не нужно! connect работает через стандартный механизм.
+```
+
+**2. Получение имени карты при подключении клиента**
+
+Когда клиент подключается к MP-серверу, он не знает имени уровня заранее. Оно получается из `GameDescriptionData`, которая передаётся сервером при согласовании. Это уже работает в `Level_network_start_client.cpp`:
+
+```cpp
+// Level_network_start_client.cpp::net_start_client3()
+if (psNET_direct_connect) {
+    level_name = name().c_str();      // SP: уже знаем уровень
+} else {
+    level_name = get_net_DescriptionData().map_name;  // MP: получаем от сервера
+    rescan_mp_archives();
+}
+```
+
+**Проблема Фазы 1**: В текущем коде в MP-режиме ищутся MP-архивы (`$game_arch_mp$`). Для кооператива нужно убрать это ограничение или разрешить SP-карты в MP-режиме.
+
+---
+
+### 14.6 Полные спецификации реализации команд
+
+#### 14.6.1 Команда `coop_host`
+
+```
+Синтаксис:
+    coop_host [<save_name>]
+    
+Аргументы:
+    save_name — имя .scop файла без расширения (опционально)
+                если не указано — начинает новую игру с дефолтного уровня
+                
+Примеры:
+    coop_host                    ← новая игра
+    coop_host my_coop_save       ← загрузить сохранение
+    
+Что делает:
+    1. Читает player_name из реестра или fallback на Core.UserName
+    2. Определяет save_name и режим (new/load)
+    3. Получает текущий/начальный уровень из ALife конфигурации
+    4. Создаёт op_server и op_client строки
+    5. Деферит KERNEL:start
+    
+Генерирует:
+    op_server = "<save_or_level>/coop/alife/<new_or_load>"
+    op_client = "localhost/name=<player_name>"
+```
+
+**Проблема**: Для "новой игры" в SP, `m_game_or_spawn` — это имя spawn-файла (обычно `"all"` или конкретная локация, конфигурируется в `alife.ltx`). Нужно прочитать это значение из конфига или использовать хардкодированный дефолт.
+
+**Файл**: `src/xrGame/alife_update_manager.cpp`
+```cpp
+void CALifeUpdateManager::new_game(LPCSTR save_name) {
+    // ...
+    if (pSettings->line_exist("alife", "new_game_spawn"))
+        xr_strcpy(save_name, pSettings->r_string("alife", "new_game_spawn"));
+    else
+        xr_strcpy(save_name, "all"); // дефолт
+}
+```
+
+**Вывод**: Для `coop_host` без аргументов нужно использовать `"all"` (или читать из `alife.ltx`).
+
+#### 14.6.2 Команда `coop_connect`
+
+```
+Синтаксис:
+    coop_connect [<ip>]
+    
+Аргументы:
+    ip — IP-адрес или hostname сервера (опционально, дефолт: localhost)
+    
+Примеры:
+    coop_connect                     ← подключиться к localhost:1235
+    coop_connect 192.168.1.100       ← подключиться к локальному хосту
+    coop_connect my.server.com       ← подключиться к удалённому хосту
+    
+Что делает:
+    1. Разбирает IP из аргументов (дефолт: "localhost")
+    2. Читает player_name из реестра
+    3. Деферит KERNEL:start с пустым op_server и нужным op_client
+    
+Генерирует:
+    op_server = ""     ← не запускает сервер
+    op_client = "<ip>/name=<player_name>/port=1235"
+```
+
+---
+
+### 14.7 Код реализации команд (финальный вид)
+
+Следующий код добавляется в `src/xrGame/console_commands.cpp`:
+
+```cpp
+// ============================================================
+// coop_host — запуск кооп-сервера (добавить после строки ~933)
+// ============================================================
+
+#include "ui/UICDkey.h"       // GetPlayerName_FromRegistry
+
+class CCC_CoopHost : public IConsole_Command
+{
+public:
+    CCC_CoopHost(LPCSTR N) : IConsole_Command(N) { bEmptyArgsHandled = TRUE; }
+
+    virtual void Execute(LPCSTR args)
+    {
+        // Определяем режим: загрузить или новая игра
+        bool has_save = args && args[0] != '\0';
+        
+        string_path save_name;
+        if (has_save) {
+            xr_strcpy(save_name, args);
+            // Убираем пробелы в конце — O(n) за один проход
+            int len = (int)xr_strlen(save_name);
+            while (len > 0 && save_name[len - 1] == ' ')
+                save_name[--len] = '\0';
+        }
+
+        // Валидация сохранения
+        if (has_save) {
+            if (!CSavedGameWrapper::saved_game_exist(save_name)) {
+                Msg("! coop_host: save file '%s' not found", save_name);
+                return;
+            }
+            if (!CSavedGameWrapper::valid_saved_game(save_name)) {
+                Msg("! coop_host: save file '%s' is corrupted or version mismatch", save_name);
+                return;
+            }
+        }
+
+        // Имя игрока
+        string64 player_name;
+        GetPlayerName_FromRegistry(player_name, sizeof(player_name));
+        if (!xr_strlen(player_name)) {
+            xr_strcpy(player_name, xr_strlen(Core.UserName) ? Core.UserName : "CoopHost");
+        }
+
+        // Строка сервера: <уровень_или_сохранение>/coop/alife/<new|load>
+        string512 op_server;
+        if (has_save) {
+            xr_sprintf(op_server, "%s/coop/alife/load", save_name);
+        } else {
+            // Читаем имя начального спавна из конфига
+            LPCSTR spawn = pSettings->line_exist("alife", "new_game_spawn")
+                ? pSettings->r_string("alife", "new_game_spawn")
+                : "all";
+            xr_sprintf(op_server, "%s/coop/alife/new", spawn);
+        }
+
+        // Строка клиента: всегда localhost для хоста
+        string256 op_client;
+        xr_sprintf(op_client, "localhost/name=%s", player_name);
+
+        Msg("* coop_host: server='%s' client='%s'", op_server, op_client);
+
+        if (g_pGameLevel)
+            Engine.Event.Defer("KERNEL:disconnect");
+
+        Engine.Event.Defer("KERNEL:start",
+            u64(xr_strdup(op_server)),
+            u64(xr_strdup(op_client)));
+    }
+
+    virtual void Info(TInfo& I)
+    {
+        xr_strcpy(I, "[save_name] — start coop server (new game or load save)");
+    }
+
+    virtual void fill_tips(vecTips& tips, u32 mode)
+    {
+        get_files_list(tips, "$game_saves$", SAVE_EXTENSION);
+    }
+};
+
+// ============================================================
+// coop_connect — подключение к кооп-серверу
+// ============================================================
+
+class CCC_CoopConnect : public IConsole_Command
+{
+public:
+    CCC_CoopConnect(LPCSTR N) : IConsole_Command(N) { bEmptyArgsHandled = TRUE; }
+
+    virtual void Execute(LPCSTR args)
+    {
+        // Адрес сервера (дефолт: localhost)
+        string256 server_ip;
+        if (args && args[0] != '\0') {
+            xr_strcpy(server_ip, args);
+            // Убираем пробелы в конце — O(n) за один проход
+            int len = (int)xr_strlen(server_ip);
+            while (len > 0 && server_ip[len - 1] == ' ')
+                server_ip[--len] = '\0';
+        } else {
+            xr_strcpy(server_ip, "localhost");
+        }
+
+        // Имя игрока
+        string64 player_name;
+        GetPlayerName_FromRegistry(player_name, sizeof(player_name));
+        if (!xr_strlen(player_name)) {
+            xr_strcpy(player_name, xr_strlen(Core.UserName) ? Core.UserName : "CoopPlayer");
+        }
+
+        // Строка клиента
+        string512 op_client;
+        xr_sprintf(op_client, "%s/name=%s/port=%d",
+            server_ip,
+            player_name,
+            START_PORT_LAN_SV);  // 1235
+
+        Msg("* coop_connect: connecting to '%s' as '%s'", server_ip, player_name);
+
+        if (g_pGameLevel)
+            Engine.Event.Defer("KERNEL:disconnect");
+
+        // op_server = xr_strdup("") — пустая строка вместо NULL (PreStart безопасно обработает)
+        // Передача nullptr вызывает краш в IGame_Persistent::PreStart()
+        Engine.Event.Defer("KERNEL:start",
+            u64(xr_strdup("")),        // пустой op_server = нет сервера, только клиент
+            u64(xr_strdup(op_client)));
+    }
+
+    virtual void Info(TInfo& I)
+    {
+        xr_strcpy(I, "[ip_address] — connect to coop server (default: localhost)");
+    }
+};
+```
+
+И в `CCC_RegisterCommands()` добавить строки:
+```cpp
+CMD1(CCC_CoopHost,    "coop_host");
+CMD1(CCC_CoopConnect, "coop_connect");
+```
+
+---
+
+### 14.8 Карта зависимостей: какие файлы нужно изменить
+
+| № | Файл | Тип изменения | Что делать |
+|---|------|---------------|------------|
+| 1 | `src/xrServerEntities/gametype_chooser.h` | Добавить константу | `eGameIDCooperative = u32(1) << 7` |
+| 2 | `src/xrGame/GamePersistent.cpp` | Добавить case | "coop" → `eGameIDCooperative` в `ParseStringToGameType()` |
+| 3 | `src/xrGame/GamePersistent.cpp` | Добавить case | Строковое представление в `GameTypeToString()` |
+| 4 | `src/xrGame/game_base.cpp` | Добавить case | `eGameIDCooperative` → `TEXT2CLSID("SV_COOP")` / `TEXT2CLSID("CL_COOP")` |
+| 5 | `src/xrServerEntities/clsid_game.h` | Добавить defines | `CLSID_SV_GAME_COOP` и `CLSID_CL_GAME_COOP` |
+| 6 | `src/xrGame/game_sv_coop.h` | Новый файл | Заголовок `game_sv_Coop : game_sv_Single` |
+| 7 | `src/xrGame/game_sv_coop.cpp` | Новый файл | Реализация (Фаза 1 = thin wrapper) |
+| 8 | `src/xrGame/game_cl_coop.h` | Новый файл | Заголовок `game_cl_Coop : game_cl_Single` |
+| 9 | `src/xrGame/game_cl_coop.cpp` | Новый файл | Реализация (Фаза 1 = thin wrapper) |
+| 10 | `src/xrServerEntities/object_factory_register.cpp` | Добавить регистрацию | `add<game_sv_Coop>(CLSID_SV_GAME_COOP, ...)` |
+| 11 | `src/xrGame/Level_start.cpp` | Изменить условие | Разрешить "coop" использовать `xrServer` |
+| 12 | `src/xrGame/console_commands.cpp` | Добавить 2 класса + 2 CMD1 | `CCC_CoopHost` и `CCC_CoopConnect` |
+
+**Итого: 6 модифицированных файлов + 4 новых файла** — минимально необходимо для Фазы 1.
+
+---
+
+### 14.9 Потенциальные проблемы и способы их решения
+
+#### 14.9.1 Проблема: `PreStart(NULL)` при `coop_connect`
+
+**Симптом**: При `op_server = NULL` в `CApplication::OnEvent` → краш в `IGame_Persistent::PreStart(NULL)`
+
+**Решение**: `CCC_CoopConnect` должен передавать `op_server = xr_strdup("")` вместо `0`:
+```cpp
+Engine.Event.Defer("KERNEL:start",
+    u64(xr_strdup("")),    // пустая строка, не NULL
+    u64(xr_strdup(op_client)));
+```
+
+В `IGame_Persistent::PreStart` пустая строка безопасна — `parse_cmd_line("")` просто ничего не заполняет.
+
+#### 14.9.2 Проблема: карта не загружается при `coop_connect`
+
+**Симптом**: Клиент не знает имя карты до подключения к серверу.
+
+**Решение**: Это уже работает в MP-режиме! При `op_server = ""` срабатывает ветка без создания сервера, а имя карты получается через `get_net_DescriptionData().map_name` после согласования с сервером. Нужно только убедиться, что `rescan_mp_archives()` не ломает SP-архивы.
+
+#### 14.9.3 Проблема: `IsGameTypeSingle()` в ~200 местах кода
+
+**Файл**: `src/xrGame/Level.h`, строка 445:
+```cpp
+IC bool IsGameTypeSingle() { return (g_pGamePersistent->GameType() == eGameIDSingle); }
+```
+
+В режиме `eGameIDCooperative` это вернёт `FALSE`, что изменит поведение во многих местах. Часть из этих изменений желательна (AI будет работать как в MP), часть — нет (HUD переключится на MP-версию).
+
+**Решение для Фазы 1**: Добавить вспомогательную функцию:
+```cpp
+IC bool IsGameTypeSingleOrCoop() {
+    u32 t = g_pGamePersistent->GameType();
+    return t == eGameIDSingle || t == eGameIDCooperative;
+}
+```
+И постепенно заменять критичные `IsGameTypeSingle()` на `IsGameTypeSingleOrCoop()` там, где кооп должен вести себя как SP.
+
+#### 14.9.4 Проблема: `NO_SINGLE` и `#ifdef` блоки
+
+В движке есть `#ifndef NO_SINGLE` блоки, которые исключают SP-код в чистом MP-билде. Для кооператива всегда нужны эти блоки, поэтому `game_sv_Coop` должен компилироваться совместно с ALife-кодом (не в `BENCHMARK_BUILD`).
+
+---
+
+### 14.10 Зависимости от внешних систем
+
+#### `psNET_direct_connect` — критически важный флаг
+
+**Файл**: `src/xrNetServer/NET_Shared.h`  
+**Значение в SP**: `TRUE` (loopback без реального сетевого стека)  
+**Нужное значение для coop**: `FALSE`
+
+Когда `psNET_direct_connect = FALSE` и `server_name = "localhost"`:
+- DirectPlay создаёт UDP-сокет на порту 1235
+- Клиент подключается к `localhost:1235`
+- На одной машине работает без изменений
+
+#### Порты DirectPlay 8
+
+**Файл**: `src/xrNetServer/NET_Common.h`
+```cpp
+#define START_PORT_LAN_CL 1234   // клиентский порт
+#define START_PORT_LAN_SV 1235   // серверный порт  ← нужно передавать клиенту
+#define END_PORT_LAN      1236
+```
+
+В команде `coop_host` сервер будет слушать на 1235. Команда `coop_connect localhost` подключится к `localhost:1235`.
+
+Для интернет-игры через NAT нужен либо port forwarding (1235 UDP), либо замена транспорта (ENet/GNS).
+
+---
+
+*Документ обновлён: детальный анализ для Фазы 1 — консольные команды coop_host и coop_connect (март 2026)*
