@@ -2392,8 +2392,21 @@ static const u32 COOP_HOST_SAVE_NAME_MAX = 512u - 17u;
 // ~178 bytes for the host string.  200 is a safe conservative cap.
 static const u32 COOP_CONNECT_HOST_MAX = 200u;
 
+// Replaces characters that are illegal in op_server/op_client strings with '_'.
+// The '/' character is used as a field separator by the options parser, and
+// '%' could be misinterpreted as a printf format specifier.
+static void Coop_SanitizeString(char* s)
+{
+    for (char* p = s; *p; ++p)
+    {
+        if (*p == '/' || *p == '%')
+            *p = '_';
+    }
+}
+
 // Fills `out` (size `out_sz`) with the best available player name:
 // registry value, then OS user name, then machine name.
+// The result is sanitized: '/' and '%' are replaced with '_'.
 static void Coop_GetPlayerName(char* out, size_t out_sz)
 {
     GetPlayerName_FromRegistry(out, (u32)out_sz);
@@ -2402,6 +2415,7 @@ static void Coop_GetPlayerName(char* out, size_t out_sz)
         LPCSTR fallback = xr_strlen(Core.UserName) ? Core.UserName : Core.CompName;
         strncpy_s(out, out_sz, fallback, out_sz - 1);
     }
+    Coop_SanitizeString(out);
 }
 
 // ---------------------------------------------------------------------------
@@ -2427,8 +2441,13 @@ public:
                     COOP_HOST_SAVE_NAME_MAX);
                 return;
             }
+            // Copy to mutable buffer and sanitize: '/' is the field separator in
+            // op_server, so it must not appear in the save name itself.
+            string512 save_name_buf;
+            strncpy_s(save_name_buf, sizeof(save_name_buf), args, sizeof(save_name_buf) - 1);
+            Coop_SanitizeString(save_name_buf);
             // Load existing save
-            xr_sprintf(op_server, "%s/coop/alife/load", args);
+            xr_sprintf(op_server, "%s/coop/alife/load", save_name_buf);
         }
         else
         {
@@ -2471,9 +2490,21 @@ public:
                 COOP_CONNECT_HOST_MAX);
             return;
         }
-        const char* host_ip = (args && xr_strlen(args)) ? args : "localhost";
 
-        xr_sprintf(op_client, "%s/name=%s/port=%d", host_ip, player_name, START_PORT_LAN_SV);
+        // Copy to a mutable buffer and sanitize: '/' and '%' are field separators
+        // in the options string and must not appear in a user-supplied hostname.
+        string256 host_buf;
+        if (args && xr_strlen(args))
+        {
+            strncpy_s(host_buf, sizeof(host_buf), args, sizeof(host_buf) - 1);
+            Coop_SanitizeString(host_buf);
+        }
+        else
+        {
+            xr_strcpy(host_buf, "localhost");
+        }
+
+        xr_sprintf(op_client, "%s/name=%s/port=%d", host_buf, player_name, START_PORT_LAN_SV);
 
         if (g_pGameLevel)
             Engine.Event.Defer("KERNEL:disconnect");
