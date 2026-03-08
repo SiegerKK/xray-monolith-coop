@@ -23,6 +23,10 @@ void IGame_ObjectPool::prefetch()
 	string256 section;
 	// prefetch objects
 	strconcat(sizeof(section), section, "prefetch_objects_", g_pGamePersistent->m_game_params.m_game_type);
+	// If there is no dedicated prefetch section for this game type (e.g. "coop"),
+	// fall back to the single-player list so we don't crash on a missing section.
+	if (!pSettings->section_exist(section))
+		xr_strcpy(section, sizeof(section), "prefetch_objects_single");
 	CInifile::Sect const& sect = pSettings->r_section(section);
 	for (CInifile::SectCIt I = sect.Data.begin(); I != sect.Data.end(); I++)
 	{

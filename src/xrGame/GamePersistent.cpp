@@ -529,7 +529,7 @@ void CGamePersistent::game_loaded()
 			g_pGameLevel->bReady &&
 			(allow_intro() && psDeviceFlags2.test(rsKeypress)) &&
 			load_screen_renderer.b_need_user_input &&
-			m_game_params.m_e_game_type == eGameIDSingle)
+			IsGameTypeSingleOrCoop())
 		{
 			VERIFY(NULL == m_intro);
 			m_intro = xr_new<CUISequencer>();
@@ -551,7 +551,7 @@ void CGamePersistent::game_loaded()
 
 		else if (	g_pGameLevel &&
 					g_pGameLevel->bReady &&
-					m_game_params.m_e_game_type == eGameIDSingle
+					IsGameTypeSingleOrCoop()
 				 )
 		{
 			Msg("intro_start game_loaded");
@@ -857,7 +857,7 @@ static BOOL bEntryFlag = TRUE;
 
 void CGamePersistent::OnAppActivate()
 {
-	bool bIsMP = (g_pGameLevel && Level().game && GameID() != eGameIDSingle);
+	bool bIsMP = (g_pGameLevel && Level().game && !IsGameTypeSingleOrCoop());
 	bIsMP &= !Device.Paused();
 
 	if (!bIsMP)
@@ -876,7 +876,7 @@ void CGamePersistent::OnAppDeactivate()
 {
 	if (!bEntryFlag) return;
 
-	bool bIsMP = (g_pGameLevel && Level().game && GameID() != eGameIDSingle);
+	bool bIsMP = (g_pGameLevel && Level().game && !IsGameTypeSingleOrCoop());
 
 	bRestorePause = FALSE;
 
@@ -924,7 +924,7 @@ void CGamePersistent::LoadTitle(bool change_tip, shared_str map_name)
 		string512 buff;
 		u8 tip_num;
 		::luabind::functor<u8> m_functor;
-		bool is_single = !xr_strcmp(m_game_params.m_game_type, "single");
+		bool is_single = IsGameTypeSingleOrCoop();
 		if (is_single)
 		{
 			R_ASSERT(ai().script_engine().functor("loadscreen.get_tip_number", m_functor));
@@ -955,7 +955,7 @@ void CGamePersistent::LoadTitle(bool change_tip, shared_str map_name)
 
 bool CGamePersistent::CanBePaused()
 {
-	return IsGameTypeSingle() || (g_pGameLevel && Level().IsDemoPlay());
+	return IsGameTypeSingleOrCoop() || (g_pGameLevel && Level().IsDemoPlay());
 }
 
 void CGamePersistent::SetPickableEffectorDOF(bool bSet)
