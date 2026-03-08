@@ -794,27 +794,3 @@ function on_game_start()
 	RegisterScriptCallback("npc_on_update", npc_on_update_force_trader_update)
 	RegisterScriptCallback("anomaly_on_before_activate", anomaly_on_before_activate_pathfinding)
 end
-
--- ============================================================
--- Fix: base Anomaly ui_main_menu.script line 281 crashes with
--- "attempt to call method 'OnButton_multiplayer_clicked' (a nil value)"
--- The method is nil because it was stripped from Anomaly (SP-only).
--- In the coop engine the Multiplayer button and the error-recovery
--- path (SwitchToMultiplayerMenu -> Dispatch(2,1)) both resolve here.
--- ============================================================
-
-local function main_menu_on_init_coop_fix(ui_obj)
-	-- Only inject when the method is still missing; don't override a
-	-- future coop lobby UI that supplies its own handler.
-	if ui_obj.OnButton_multiplayer_clicked ~= nil then
-		return
-	end
-
-	ui_obj.OnButton_multiplayer_clicked = function(self)
-		-- Phase 1: close the main menu as a safe placeholder until a
-		-- dedicated coop lobby dialog is wired in here in a future phase.
-		get_console():execute("main_menu off")
-	end
-end
-
-RegisterScriptCallback("main_menu_on_init", main_menu_on_init_coop_fix)
