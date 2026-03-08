@@ -2382,15 +2382,18 @@ public:
 // ---------------------------------------------------------------------------
 
 // Maximum number of characters allowed for the save-name argument in
-// coop_host.  op_server is string512 (512 bytes); the fixed suffix
-// "/coop/alife/load" is 16 chars + 1 null terminator = 17 bytes overhead.
+// coop_host.  op_server is string512 (512 bytes); the fixed format
+// "%s/coop/alife/load" expands to: save_name (N chars) + "/coop/alife/load"
+// (16 chars) + null terminator (1 byte) = N + 17 bytes.
+// Therefore the save name must be at most 512 - 17 = 495 chars.
 static const u32 COOP_HOST_SAVE_NAME_MAX = 512u - 17u;
 
-// Maximum number of characters allowed for the IP/hostname argument in
-// coop_connect.  op_client is string256 (256 bytes); the fixed parts
-// "/name=<64-char-name>/port=12345" account for up to ~78 bytes, leaving
-// ~178 bytes for the host string.  200 is a safe conservative cap.
-static const u32 COOP_CONNECT_HOST_MAX = 200u;
+// Maximum characters allowed for the IP/hostname in coop_connect.
+// op_client is string256 (256 bytes).  The format "%s/name=%s/port=%d"
+// expands to: host (H) + "/name=" (6) + player_name (up to 63) +
+// "/port=1235" (10) + null (1) = H + 80 bytes.
+// So H must be at most 256 - 80 = 176 chars.
+static const u32 COOP_CONNECT_HOST_MAX = 176u;
 
 // Replaces characters that are illegal in op_server/op_client strings with '_'.
 // The '/' character is used as a field separator by the options parser, and
@@ -2405,16 +2408,19 @@ static void Coop_SanitizeString(char* s)
 }
 
 // Fills `out` (size `out_sz`) with the best available player name:
-// registry value, then OS user name, then machine name.
+// registry value, then OS user name, then machine name, then "Player".
+// Note: Core.UserName and Core.CompName are char arrays (not pointers);
+// they are always valid but may be empty if the OS APIs returned nothing.
 // The result is sanitized: '/' and '%' are replaced with '_'.
 static void Coop_GetPlayerName(char* out, size_t out_sz)
 {
     GetPlayerName_FromRegistry(out, (u32)out_sz);
+    if (!xr_strlen(out) && xr_strlen(Core.UserName))
+        strncpy_s(out, out_sz, Core.UserName, out_sz - 1);
+    if (!xr_strlen(out) && xr_strlen(Core.CompName))
+        strncpy_s(out, out_sz, Core.CompName, out_sz - 1);
     if (!xr_strlen(out))
-    {
-        LPCSTR fallback = xr_strlen(Core.UserName) ? Core.UserName : Core.CompName;
-        strncpy_s(out, out_sz, fallback, out_sz - 1);
-    }
+        strncpy_s(out, out_sz, "Player", out_sz - 1);
     Coop_SanitizeString(out);
 }
 
