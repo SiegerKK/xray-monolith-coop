@@ -2384,17 +2384,18 @@ public:
 // Maximum number of characters allowed for the save-name argument in
 // coop_host.  op_server is string512 (512 bytes); the fixed format
 // "%s/coop/alife/load" expands to: save_name (N chars) + "/coop/alife/load"
-// (16 chars) + null terminator (1 byte) = N + COOP_HOST_SUFFIX_LEN bytes.
+// (length 16) + null terminator (1 byte) = N + COOP_HOST_SUFFIX_LEN bytes.
 // Therefore the save name must be at most 512 - COOP_HOST_SUFFIX_LEN chars.
-static const u32 COOP_HOST_SUFFIX_LEN   = 17u;  // strlen("/coop/alife/load") + 1 (null)
+static const u32 COOP_HOST_SUFFIX_LEN   = 17u;  // length of "/coop/alife/load" (16) + null terminator (1)
 static const u32 COOP_HOST_SAVE_NAME_MAX = 512u - COOP_HOST_SUFFIX_LEN;
 
 // Maximum characters allowed for the IP/hostname in coop_connect.
 // op_client is string256 (256 bytes).  The format "%s/name=%s/port=1235"
-// expands to: host (H) + "/name=" (6) + player_name (up to 63) +
+// expands to: host (H) + "/name=" (6) + player_name (up to COOP_PLAYER_NAME_MAX) +
 // "/port=1235" (10) + null (1) = H + COOP_CONNECT_OVERHEAD bytes.
 // So H must be at most 256 - COOP_CONNECT_OVERHEAD chars.
-static const u32 COOP_CONNECT_OVERHEAD  = 80u;  // 6 + 63 + 10 + 1
+static const u32 COOP_PLAYER_NAME_MAX   = 63u;  // sizeof(string64) - 1
+static const u32 COOP_CONNECT_OVERHEAD  = 6u + COOP_PLAYER_NAME_MAX + 10u + 1u;  // 80 total
 static const u32 COOP_CONNECT_HOST_MAX  = 256u - COOP_CONNECT_OVERHEAD;
 
 // Replaces characters that are illegal in op_server/op_client strings with '_'.
@@ -2499,8 +2500,9 @@ public:
             return;
         }
 
-        // Copy to a mutable buffer and sanitize: '/' and '%' are field separators
-        // in the options string and must not appear in a user-supplied hostname.
+        // Copy to a mutable buffer and sanitize: '/' is the field separator in
+        // the options string, and '%' could be misinterpreted as a printf format
+        // specifier in downstream code.  Both must be replaced in user input.
         string256 host_buf;
         if (args && xr_strlen(args))
         {
