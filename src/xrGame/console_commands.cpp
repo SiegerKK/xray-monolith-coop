@@ -2384,16 +2384,18 @@ public:
 // Maximum number of characters allowed for the save-name argument in
 // coop_host.  op_server is string512 (512 bytes); the fixed format
 // "%s/coop/alife/load" expands to: save_name (N chars) + "/coop/alife/load"
-// (16 chars) + null terminator (1 byte) = N + 17 bytes.
-// Therefore the save name must be at most 512 - 17 = 495 chars.
-static const u32 COOP_HOST_SAVE_NAME_MAX = 512u - 17u;
+// (16 chars) + null terminator (1 byte) = N + COOP_HOST_SUFFIX_LEN bytes.
+// Therefore the save name must be at most 512 - COOP_HOST_SUFFIX_LEN chars.
+static const u32 COOP_HOST_SUFFIX_LEN   = 17u;  // strlen("/coop/alife/load") + 1 (null)
+static const u32 COOP_HOST_SAVE_NAME_MAX = 512u - COOP_HOST_SUFFIX_LEN;
 
 // Maximum characters allowed for the IP/hostname in coop_connect.
-// op_client is string256 (256 bytes).  The format "%s/name=%s/port=%d"
+// op_client is string256 (256 bytes).  The format "%s/name=%s/port=1235"
 // expands to: host (H) + "/name=" (6) + player_name (up to 63) +
-// "/port=1235" (10) + null (1) = H + 80 bytes.
-// So H must be at most 256 - 80 = 176 chars.
-static const u32 COOP_CONNECT_HOST_MAX = 176u;
+// "/port=1235" (10) + null (1) = H + COOP_CONNECT_OVERHEAD bytes.
+// So H must be at most 256 - COOP_CONNECT_OVERHEAD chars.
+static const u32 COOP_CONNECT_OVERHEAD  = 80u;  // 6 + 63 + 10 + 1
+static const u32 COOP_CONNECT_HOST_MAX  = 256u - COOP_CONNECT_OVERHEAD;
 
 // Replaces characters that are illegal in op_server/op_client strings with '_'.
 // The '/' character is used as a field separator by the options parser, and

@@ -5,7 +5,3 @@ game_sv_Coop::game_sv_Coop()
 {
     m_type = eGameIDCooperative;
 }
-
-game_sv_Coop::~game_sv_Coop()
-{
-}

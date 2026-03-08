@@ -8,7 +8,6 @@ class game_sv_Coop : public game_sv_Single
 
 public:
     game_sv_Coop();
-    virtual ~game_sv_Coop();
 
     virtual LPCSTR type_name() const { return "coop"; }
     virtual BOOL CanHaveFriendlyFire() { return FALSE; }
