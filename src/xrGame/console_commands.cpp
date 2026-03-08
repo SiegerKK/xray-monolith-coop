@@ -2383,20 +2383,21 @@ public:
 
 // Maximum number of characters allowed for the save-name argument in
 // coop_host.  op_server is string512 (512 bytes); the fixed format
-// "%s/coop/alife/load" expands to: save_name (N chars) + "/coop/alife/load"
-// (length 16) + null terminator (1 byte) = N + COOP_HOST_SUFFIX_LEN bytes.
-// Therefore the save name must be at most 512 - COOP_HOST_SUFFIX_LEN chars.
-static const u32 COOP_HOST_SUFFIX_LEN   = 17u;  // length of "/coop/alife/load" (16) + null terminator (1)
+// "%s/coop/alife/load" expands to: save_name (N chars) + "/coop/alife/load" +
+// null terminator = N + COOP_HOST_SUFFIX_LEN bytes.
+// sizeof() includes the null terminator, so it directly gives the correct value.
+static const u32 COOP_HOST_SUFFIX_LEN   = sizeof("/coop/alife/load");  // 17: 16 chars + null
 static const u32 COOP_HOST_SAVE_NAME_MAX = 512u - COOP_HOST_SUFFIX_LEN;
 
 // Maximum characters allowed for the IP/hostname in coop_connect.
-// op_client is string256 (256 bytes).  The format "%s/name=%s/port=1235"
-// expands to: host (H) + "/name=" (6) + player_name (up to COOP_PLAYER_NAME_MAX) +
-// "/port=1235" (10) + null (1) = H + COOP_CONNECT_OVERHEAD bytes.
-// So H must be at most 256 - COOP_CONNECT_OVERHEAD chars.
-static const u32 COOP_PLAYER_NAME_MAX   = 63u;  // sizeof(string64) - 1
-static const u32 COOP_CONNECT_OVERHEAD  = 6u + COOP_PLAYER_NAME_MAX + 10u + 1u;  // 80 total
-static const u32 COOP_CONNECT_HOST_MAX  = 256u - COOP_CONNECT_OVERHEAD;
+// op_client is string256 (256 bytes).  The format "%s/name=%s/port=%d" with
+// port=START_PORT_LAN_SV expands to: host + "/name=" + player_name + "/port=1235" + null.
+// Each component's size is derived from the literal/constant used in the sprintf below.
+static const u32 COOP_PLAYER_NAME_MAX     = sizeof(string64) - 1u;         // 63
+static const u32 COOP_CONNECT_NAME_PFX    = sizeof("/name=") - 1u;         // 6
+static const u32 COOP_CONNECT_PORT_SFX    = sizeof("/port=1235") - 1u;     // 10
+static const u32 COOP_CONNECT_OVERHEAD    = COOP_CONNECT_NAME_PFX + COOP_PLAYER_NAME_MAX + COOP_CONNECT_PORT_SFX + 1u;
+static const u32 COOP_CONNECT_HOST_MAX    = 256u - COOP_CONNECT_OVERHEAD;
 
 // Replaces characters that are illegal in op_server/op_client strings with '_'.
 // The '/' character is used as a field separator by the options parser, and
