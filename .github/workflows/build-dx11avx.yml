@@ -1,0 +1,46 @@
+name: Build DX11-AVX (manual)
+
+on:
+  workflow_dispatch:
+
+env:
+  SOLUTION_FILE_PATH: src/engine-vs2022.sln
+  BUILD_CONF: DX11-AVX
+
+jobs:
+  build:
+    name: build-dx11-avx
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+    - name: Configure Pagefile
+      uses: al-cheb/configure-pagefile-action@v1.3
+      with:
+        minimum-size: 8GB
+        maximum-size: 8GB
+        disk-root: "C:"
+
+    - name: Checkout repo
+      uses: actions/checkout@v4
+
+    - name: Init submodules
+      uses: snickerbockers/submodules-init@v4
+
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v1.3.1
+      with:
+        msbuild-architecture: "x64"
+
+    - name: Build ${{ env.BUILD_CONF }}
+      working-directory: ${{ env.GITHUB_WORKSPACE }}
+      run: msbuild /p:Configuration=${{ env.BUILD_CONF }} ${{ env.SOLUTION_FILE_PATH }}
+
+    - name: Upload Exe
+      uses: actions/upload-artifact@v4.6.0
+      with:
+        name: ${{ env.BUILD_CONF }}_exe_run${{ github.run_number }}
+        path: ./_build/_game/bin_dbg/*.exe
+        if-no-files-found: "error"
+        retention-days: 14
