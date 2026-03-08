@@ -557,7 +557,23 @@ BOOL IPureClient::Connect(LPCSTR options)
 					DPNCONNECT_SYNC); // dwFlags
 				if (res != S_OK)
 				{
-					//			xr_string res = Debug.error2string(HostSuccess);
+					// Always log the real HRESULT so we can distinguish a genuine
+					// port conflict (DPNERR_ADDRESSING = 0x80158040) from a
+					// DirectPlay compatibility failure.
+					Msg("! IPureClient : port %d failed (hr=0x%08X)", c_port, (unsigned)res);
+
+					// Only retry on DPNERR_ADDRESSING (port-binding conflict).
+					// Any other error is a DirectPlay problem; scanning more ports
+					// will not help.
+					if (res != DPNERR_ADDRESSING)
+					{
+						Msg("! IPureClient : DirectPlay returned a non-addressing error "
+						    "(hr=0x%08X). If you see E_FAIL (0x80004005): ensure "
+						    "DirectPlay is installed (Windows Features > Legacy "
+						    "Components > DirectPlay). Under Wine: run "
+						    "\"winetricks directplay\".", (unsigned)res);
+						return FALSE;
+					}
 
 					if (bPortWasSet)
 					{

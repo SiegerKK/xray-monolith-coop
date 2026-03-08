@@ -2399,6 +2399,8 @@ static const u32 COOP_CONNECT_PORT_SFX    = sizeof("/port=50001") - 1u;    // 11
 static const u32 COOP_CONNECT_OVERHEAD    = COOP_CONNECT_NAME_PFX + COOP_PLAYER_NAME_MAX + COOP_CONNECT_PORT_SFX + 1u;
 static const u32 COOP_CONNECT_HOST_MAX    = 256u - COOP_CONNECT_OVERHEAD;
 // Guard: COOP_CONNECT_PORT_SFX assumes START_PORT_LAN_SV has exactly 5 digits.
+// Valid port numbers are 0-65535; every value in [10000, 65535] is exactly
+// 5 decimal digits (65535 < 100000), so these bounds guarantee 5 digits.
 static_assert(START_PORT_LAN_SV >= 10000 && START_PORT_LAN_SV <= 65535,
     "COOP_CONNECT_PORT_SFX assumes a 5-digit port number; update sizeof literal if port changes");
 
