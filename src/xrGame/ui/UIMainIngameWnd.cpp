@@ -286,7 +286,7 @@ void CUIMainIngameWnd::Draw()
 	}
 	FS.dwOpenCounter = 0;
 
-	if (!IsGameTypeSingle())
+	if (!IsGameTypeSingleOrCoop())
 	{
 		float luminocity = smart_cast<CGameObject*>(Level().CurrentEntity())->ROS()->get_luminocity();
 		float power = log(luminocity > .001f ? luminocity : .001f) * (1.f/*luminocity_factor*/);
@@ -361,7 +361,7 @@ void CUIMainIngameWnd::Update()
 	}
 
 	UpdateMainIndicators();
-	if (IsGameTypeSingle())
+	if (IsGameTypeSingleOrCoop())
 		return;
 
 	// ewiArtefact

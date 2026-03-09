@@ -673,7 +673,7 @@ void CGamePersistent::OnFrame()
 			}
 		}
 #ifndef MASTER_GOLD
-        if (Level().CurrentViewEntity() && IsGameTypeSingle())
+        if (Level().CurrentViewEntity() && IsGameTypeSingleOrCoop())
         {
             if (!g_actor || (g_actor->ID() != Level().CurrentViewEntity()->ID()))
             {
@@ -729,7 +729,7 @@ void CGamePersistent::OnFrame()
             }
         }
 #else // MASTER_GOLD
-		if (g_actor && IsGameTypeSingle())
+		if (g_actor && IsGameTypeSingleOrCoop())
 		{
 			CCameraBase* C = NULL;
 			if (!Actor()->Holder())
