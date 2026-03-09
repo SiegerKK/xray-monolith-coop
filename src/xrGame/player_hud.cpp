@@ -1359,6 +1359,8 @@ void player_hud::update(const Fmatrix& cam_trans)
 void player_hud::updateMovementLayerState()
 {
 	CActor* pActor = Actor();
+	Msg("[coop] player_hud::updateMovementLayerState pActor=%s g_actor=%s",
+		pActor ? "valid" : "NULL", g_actor ? "valid" : "NULL");
 
 	if (!pActor)
 		return;

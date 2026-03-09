@@ -60,9 +60,10 @@ CActor* g_actor = NULL;
 CActor* Actor()
 {
 	R_ASSERT2(IsGameTypeSingleOrCoop(), "Actor() method invocation must be only in Single Player or Cooperative game!");
-	VERIFY(g_actor);
-	/*if (GameID() != eGameIDSingle) 
-		VERIFY	(g_actor == Level().CurrentControlEntity());*/
+	// NOTE: g_actor can be NULL during initial coop spawn before actor net_Spawn sets it.
+	// Callers must guard against NULL (e.g. updateMovementLayerState already does if(!pActor) return).
+	if (!g_actor)
+		Msg("[coop] Actor(): g_actor is NULL (actor not yet spawned)");
 	return (g_actor);
 };
 
