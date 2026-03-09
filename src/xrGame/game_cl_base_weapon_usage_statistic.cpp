@@ -998,6 +998,7 @@ void WeaponUsageStatistic::SVUpdateAliveTimes()
 
 void WeaponUsageStatistic::Update()
 {
+	if (Level().IsGameTypeSingleOrCoop()) return;
 	if (!CollectData()) return;
 	SVUpdateAliveTimes(); //update client alive time and servers total alive times
 	if (!OnServer()) return;
@@ -1023,7 +1024,9 @@ void WeaponUsageStatistic::OnUpdateRequest(NET_Packet*)
 	if (!xr_strlen(local_player->getName()))
 		return;
 
-	Player_Statistic& PS = *(FindPlayer(local_player->getName()));
+	PLAYERS_STATS_it pPlayer = FindPlayer(local_player->getName());
+	if (pPlayer == aPlayersStatistic.end()) return;
+	Player_Statistic& PS = *pPlayer;
 	//-------------------------------------------------
 	NET_Packet P;
 	P.w_begin(M_STATISTIC_UPDATE_RESPOND);

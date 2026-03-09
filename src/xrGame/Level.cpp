@@ -893,7 +893,7 @@ void CLevel::ProcessGameEvents()
 			case M_STATISTIC_UPDATE:
 				{
 					PROF_EVENT("ProcessGameEvents M_STATISTIC_UPDATE");
-					if (GameID() != eGameIDSingle)
+					if (!IsGameTypeSingleOrCoop())
 						Game().m_WeaponUsageStatistic->OnUpdateRequest(&P);
 					break;
 				}
