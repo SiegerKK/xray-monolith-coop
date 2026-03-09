@@ -998,7 +998,7 @@ void WeaponUsageStatistic::SVUpdateAliveTimes()
 
 void WeaponUsageStatistic::Update()
 {
-	if (Level().IsGameTypeSingleOrCoop()) return;
+	if (IsGameTypeSingleOrCoop()) return;
 	if (!CollectData()) return;
 	SVUpdateAliveTimes(); //update client alive time and servers total alive times
 	if (!OnServer()) return;
