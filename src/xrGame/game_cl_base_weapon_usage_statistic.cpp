@@ -1027,7 +1027,7 @@ void WeaponUsageStatistic::OnUpdateRequest(NET_Packet*)
 	PLAYERS_STATS_it pPlayer = FindPlayer(local_player->getName());
 	if (pPlayer == aPlayersStatistic.end())
 	{
-		Msg("! WARNING: WeaponUsageStatistic::OnUpdateRequest - player [%s] not found in stats table", local_player->getName());
+		Msg("! WARNING: WeaponUsageStatistic::OnUpdateRequest - player [%s] not found in stats table; player statistics will not be updated this cycle", local_player->getName());
 		return;
 	}
 	Player_Statistic& PS = *pPlayer;
