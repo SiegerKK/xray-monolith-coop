@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Fix crash at "CL: On Update Request [4]"
+
+Game crashed after ~4 weapon-stats timer cycles (~2-4 minutes on level).
+
+**Root cause:** `WeaponUsageStatistic` is an MP-only subsystem. Three code paths
+incorrectly treated coop as multiplayer via `GameID() != eGameIDSingle`:
+
+| File | Line | Change |
+|------|------|--------|
+| `src/xrGame/Level.cpp` | ~896 | `GameID() != eGameIDSingle` → `!IsGameTypeSingleOrCoop()` in `M_STATISTIC_UPDATE` handler |
+| `src/xrGame/game_cl_base_weapon_usage_statistic.cpp` | `Update()` | Early-return when `IsGameTypeSingleOrCoop()` — stops sending `M_STATISTIC_UPDATE` packets in coop |
+| `src/xrGame/game_cl_base_weapon_usage_statistic.cpp` | `OnUpdateRequest()` | Safe iterator check: `FindPlayer()` result validated before dereference |
+| `src/xrGame/xrServer.cpp` | ~670 | `GameID() != eGameIDSingle` → `!IsGameTypeSingleOrCoop()` prevents `static_cast<game_sv_mp*>` UB (game_sv_Coop is NOT game_sv_mp) |
+
+---
+
 ## v0.1-host-stable *(2026-03-09)*
 
 > **Checkpoint**: Coop host can load a test level and play without crashes.
