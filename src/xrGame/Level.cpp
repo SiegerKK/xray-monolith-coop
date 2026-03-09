@@ -456,6 +456,8 @@ void CLevel::cl_Process_Event(u16 dest, u16 type, NET_Packet& P)
             Game().OnDestroy(GO);
         }
         GO->OnEvent(P, type);
+        if (IsGameTypeSingleOrCoop())
+            Msg("[coop] cl_Process_Event: OnEvent returned type=%u dest=%u", type, dest);
     }
     else
     {
