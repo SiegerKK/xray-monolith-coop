@@ -662,7 +662,7 @@ void game_sv_GameState::Update()
 	ping_filler tmp_functor;
 	m_server->ForEachClientDo(tmp_functor);
 
-	if (!IsGameTypeSingle() && (Phase() == GAME_PHASE_INPROGRESS))
+	if (!IsGameTypeSingleOrCoop() && (Phase() == GAME_PHASE_INPROGRESS))
 	{
 		m_item_respawner.update(Level().timeServer());
 	}
@@ -783,7 +783,7 @@ void game_sv_GameState::OnEvent(NET_Packet& tNetPacket, u16 type, u32 time, Clie
 
 			if (!e_src) // && !IsGameTypeSingle() added by andy because of Phantom does not have server entity
 			{
-				if (IsGameTypeSingle()) break;
+				if (IsGameTypeSingleOrCoop()) break;
 
 				game_PlayerState* ps = get_eid(id_src);
 				if (!ps) break;
@@ -895,7 +895,7 @@ void game_sv_GameState::OnSwitchPhase(u32 old_phase, u32 new_phase)
 void game_sv_GameState::AddDelayedEvent(NET_Packet& tNetPacket, u16 type, u32 time, ClientID sender)
 {
 	//	OnEvent(tNetPacket,type,time,sender);
-	if (IsGameTypeSingle())
+	if (IsGameTypeSingleOrCoop())
 	{
 		m_event_queue->Create(tNetPacket, type, time, sender);
 		return;

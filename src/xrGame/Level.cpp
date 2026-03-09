@@ -858,6 +858,15 @@ void CLevel::ProcessGameEvents()
 						Msg("[ProcessGameEvents] M_SPAWN: section %s, obj_id %d, parent_id %d, event_id %d", section.c_str(), obj_id, parent_id, dest);
 					}
 #endif
+					if (IsGameTypeSingleOrCoop())
+					{
+						u32 saved_pos = P.r_tell();
+						u16 parent_id;
+						shared_str section;
+						u16 obj_id = GetSpawnInfo(P, parent_id, section);
+						Msg("[coop] ProcessGameEvents M_SPAWN: section=%s obj_id=%d parent_id=%d", section.c_str(), obj_id, parent_id);
+						P.r_seek(saved_pos);
+					}
 
 					u16 dummy16;
 					P.r_begin(dummy16);
@@ -867,10 +876,8 @@ void CLevel::ProcessGameEvents()
 			case M_EVENT:
 				{
 					PROF_EVENT("ProcessGameEvents M_EVENT");
-#ifndef MASTER_GOLD
 					if (IsGameTypeSingleOrCoop())
 						Msg("[coop] ProcessGameEvents M_EVENT: event_type=%u destination_id=%u", type, dest);
-#endif
 					cl_Process_Event(dest, type, P);
 					break;
 				}
@@ -911,10 +918,8 @@ void CLevel::ProcessGameEvents()
 			case M_GAMEMESSAGE:
 				{
 					PROF_EVENT("ProcessGameEvents M_GAMEMESSAGE");
-#ifndef MASTER_GOLD
 					if (IsGameTypeSingleOrCoop())
 						Msg("[coop] ProcessGameEvents M_GAMEMESSAGE");
-#endif
 					Game().OnGameMessage(P);
 					break;
 				}

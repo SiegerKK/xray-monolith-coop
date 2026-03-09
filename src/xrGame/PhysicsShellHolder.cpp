@@ -262,7 +262,7 @@ void CPhysicsShellHolder::activate_physic_shell()
 	}
 	smart_cast<IKinematics*>(Visual())->CalculateBones_Invalidate();
 	smart_cast<IKinematics*>(Visual())->CalculateBones(TRUE);
-	if (!IsGameTypeSingle())
+	if (!IsGameTypeSingleOrCoop())
 	{
 		if (!smart_cast<CCustomRocket*>(this) && !smart_cast<CGrenade*>(this)) PPhysicsShell()->SetIgnoreDynamic();
 	}
@@ -505,7 +505,7 @@ bool CPhysicsShellHolder::register_schedule() const
 
 void CPhysicsShellHolder::on_physics_disable()
 {
-	if (IsGameTypeSingle())
+	if (IsGameTypeSingleOrCoop())
 		return;
 
 	/*NET_Packet			net_packet;

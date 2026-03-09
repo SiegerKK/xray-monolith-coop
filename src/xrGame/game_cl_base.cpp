@@ -297,10 +297,8 @@ void game_cl_GameState::OnGameMessage(NET_Packet& P)
 	u32 msg;
 	P.r_u32(msg);
 
-#ifndef MASTER_GOLD
 	if (IsGameTypeSingleOrCoop())
 		Msg("[coop] OnGameMessage: msg=%u", msg);
-#endif
 
 	TranslateGameMessage(msg, P);
 };

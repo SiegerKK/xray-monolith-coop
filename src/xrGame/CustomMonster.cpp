@@ -1415,7 +1415,7 @@ void CCustomMonster::ForceTransform(const Fmatrix& m)
 {
 	character_physics_support()->ForceTransform(m);
 	const float block_damage_time_seconds = 2.f;
-	if (!IsGameTypeSingle())
+	if (!IsGameTypeSingleOrCoop())
 		character_physics_support()->movement()->BlockDamageSet(u64(block_damage_time_seconds / fixed_step));
 }
 
