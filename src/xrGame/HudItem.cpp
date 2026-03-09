@@ -213,11 +213,32 @@ void CHudItem::OnStateSwitch(u32 S, u32 oldState)
 
 	g_player_hud->updateMovementLayerState();
 
+	// ---- Lua functor call for OnStateSwitch ----------------------------------------
+	// Each step is logged so that the exact crash location is visible in the next log.
+	const u16 obj_id = object().ID();
+	Msg("[coop] CHudItem::OnStateSwitch: step1 looking up _G.CHudItem__OnStateSwitch obj_id=%u", obj_id);
 	::luabind::functor<void> funct;
-	if (ai().script_engine().functor("_G.CHudItem__OnStateSwitch", funct))
+	const bool funct_found = ai().script_engine().functor("_G.CHudItem__OnStateSwitch", funct);
+	Msg("[coop] CHudItem::OnStateSwitch: step2 functor_found=%d obj_id=%u", (int)funct_found, obj_id);
+	if (funct_found)
 	{
-		funct(smart_cast<CGameObject*>(this)->lua_game_object(), S, oldState);
+		// Use object().lua_game_object() directly instead of a cross-cast from
+		// CHudItem* to CGameObject*. object() already holds the CPhysicItem* (which
+		// is-a CGameObject) stored at _construct() time, so no dynamic_cast is needed.
+		CScriptGameObject* sgo = object().lua_game_object();
+		Msg("[coop] CHudItem::OnStateSwitch: step3 sgo=%s S=%u oldState=%u",
+			sgo ? "valid" : "NULL", S, oldState);
+		if (sgo)
+		{
+			funct(sgo, S, oldState);
+			Msg("[coop] CHudItem::OnStateSwitch: step4 funct returned obj_id=%u", obj_id);
+		}
+		else
+		{
+			Msg("[coop] CHudItem::OnStateSwitch: skipping funct call, lua_game_object() returned NULL obj_id=%u", obj_id);
+		}
 	}
+	Msg("[coop] CHudItem::OnStateSwitch: done obj_id=%u S=%u", obj_id, S);
 }
 
 void CHudItem::OnAnimationEnd(u32 state)

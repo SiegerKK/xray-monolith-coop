@@ -247,6 +247,10 @@ function callback_add(name)
 	if (not intercepts[name]) then
 		intercepts[name] = {}
 		next_index[name] = 1
+		-- [coop diag] confirm actor_on_item_state_switch registration timing
+		if name == "actor_on_item_state_switch" then
+			printf("[coop] axr_main.callback_add: registered new callback '%s'", name)
+		end
 	else
 		printf("![axr_main callback_add] callback %s already exists!",name)
 		callstack()
@@ -279,12 +283,19 @@ end
 
 function make_callback(name,...)
 	if (intercepts[name]) then
+		-- [coop diag] narrow log: only trace the callback involved in the loading crash
+		if name == "actor_on_item_state_switch" then
+			printf("[coop] axr_main.make_callback: dispatching '%s'", name)
+		end
 		for func_or_userdata, v in spairs(intercepts[name], sort_func_values_ascend) do 
 			if (type(func_or_userdata) == "function") then 
 				func_or_userdata(...)
 			elseif (func_or_userdata[name]) then
 				func_or_userdata[name](func_or_userdata,...)
 			end
+		end
+		if name == "actor_on_item_state_switch" then
+			printf("[coop] axr_main.make_callback: '%s' done", name)
 		end
 	else
 		printf("![axr_main make_callback] can't make callback to non existing intercept %s!",name)
