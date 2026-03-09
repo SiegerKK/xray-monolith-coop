@@ -1028,7 +1028,7 @@ void WeaponUsageStatistic::OnUpdateRequest(NET_Packet*)
 	PLAYERS_STATS_it pPlayer = FindPlayer(playerName);
 	if (pPlayer == aPlayersStatistic.end())
 	{
-		Msg("! WARNING: Player [%s] not found in stats table, skipping update", playerName);
+		Msg("! [%s] not in stats, skip", playerName);
 		return;
 	}
 	Player_Statistic& PS = *pPlayer;
