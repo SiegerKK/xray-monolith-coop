@@ -4,6 +4,7 @@ function on_game_start()
 end
 
 function actor_on_footstep(mat)
+	if not db.actor then return end
 	if string.find(mat,"water") then
 		save_var(db.actor,'grw_in_water',true)
 	else
@@ -12,6 +13,7 @@ function actor_on_footstep(mat)
 end
 
 function actor_on_update(_,delta)
+	if not db.actor then return end
 	if load_var(db.actor,"grw_in_water") == true then
 		local h = hit()
 		h.impulse = 0
