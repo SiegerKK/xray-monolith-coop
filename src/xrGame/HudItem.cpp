@@ -67,6 +67,12 @@ CHudItem::~CHudItem()
 
 void CHudItem::DeleteHudItemData()
 {
+	// Remove from player_hud's slots BEFORE freeing to prevent use-after-free.
+	// If the item is destroyed (e.g. net_Destroy) while still attached, the
+	// freed attachable_hud_item pointer would remain in g_player_hud->m_attached_items[],
+	// causing later dereferences to read freed memory (NULL m_parent_hud_item, etc.).
+	if (g_player_hud && m_attachable)
+		g_player_hud->clear_stale_attached_item(m_attachable);
 	xr_delete(m_attachable);
 	m_attachable = nullptr;
 }

@@ -407,6 +407,8 @@ public:
 	attachable_hud_item* attached_item(u16 item_idx) { return m_attached_items[item_idx]; };
 	void detach_item_idx(u16 idx);
 	void detach_item(CHudItem* item);
+	// Remove a stale pointer from all slots (called by CHudItem::DeleteHudItemData to prevent use-after-free)
+	void clear_stale_attached_item(attachable_hud_item* pi);
 
 	bool allow_script_anim();
 
