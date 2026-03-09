@@ -302,7 +302,7 @@ void CEntityAlive::Hit(SHit* pHDS)
 	//-------------------------------------------
 	inherited::Hit(&HDS);
 
-	if (g_Alive() && IsGameTypeSingle())
+	if (g_Alive() && IsGameTypeSingleOrCoop())
 	{
 		CEntityAlive* EA = smart_cast<CEntityAlive*>(HDS.who);
 		if (EA && EA->g_Alive() && EA->ID() != ID())
@@ -320,14 +320,14 @@ void CEntityAlive::OnEvent(NET_Packet& P, u16 type)
 
 void CEntityAlive::Die(CObject* who)
 {
-	if (IsGameTypeSingle())
+	if (IsGameTypeSingleOrCoop())
 		RELATION_REGISTRY().Action(smart_cast<CEntityAlive*>(who), this, RELATION_REGISTRY::KILL);
 	inherited::Die(who);
 
 	const CGameObject* who_object = smart_cast<const CGameObject*>(who);
 	callback(GameObject::eDeath)(lua_game_object(), who_object ? who_object->lua_game_object() : 0);
 
-	if (!getDestroy() && (GameID() == eGameIDSingle))
+	if (!getDestroy() && IsGameTypeSingleOrCoop())
 	{
 		NET_Packet P;
 		u_EventGen(P, GE_ASSIGN_KILLER, ID());

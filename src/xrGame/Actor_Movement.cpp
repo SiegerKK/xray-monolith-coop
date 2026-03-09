@@ -314,7 +314,7 @@ void CActor::g_cl_CheckControls(u32 mstate_wf, Fvector& vControlAccel, float& Ju
 		} //(mstate_real&mcAnyMove)
 	} //peOnGround || peAtWall
 
-	if (IsGameTypeSingle() && cam_eff_factor > EPS)
+	if (IsGameTypeSingleOrCoop() && cam_eff_factor > EPS)
 	{
 		LPCSTR state_anm = NULL;
 

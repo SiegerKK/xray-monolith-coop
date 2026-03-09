@@ -284,6 +284,7 @@ void game_cl_GameState::TranslateGameMessage(u32 msg, NET_Packet& P)
 		break;
 	default:
 		{
+			Msg("! [coop] TranslateGameMessage: unknown or unhandled game message type=%u", msg);
 			R_ASSERT2(0, "Unknown Game Message");
 		}
 		break;
@@ -295,6 +296,11 @@ void game_cl_GameState::OnGameMessage(NET_Packet& P)
 	VERIFY(this && &P);
 	u32 msg;
 	P.r_u32(msg);
+
+#ifndef MASTER_GOLD
+	if (IsGameTypeSingleOrCoop())
+		Msg("[coop] OnGameMessage: msg=%u", msg);
+#endif
 
 	TranslateGameMessage(msg, P);
 };

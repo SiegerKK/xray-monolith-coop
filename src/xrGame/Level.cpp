@@ -867,6 +867,10 @@ void CLevel::ProcessGameEvents()
 			case M_EVENT:
 				{
 					PROF_EVENT("ProcessGameEvents M_EVENT");
+#ifndef MASTER_GOLD
+					if (IsGameTypeSingleOrCoop())
+						Msg("[coop] ProcessGameEvents M_EVENT: event_type=%u destination_id=%u", type, dest);
+#endif
 					cl_Process_Event(dest, type, P);
 					break;
 				}
@@ -907,6 +911,10 @@ void CLevel::ProcessGameEvents()
 			case M_GAMEMESSAGE:
 				{
 					PROF_EVENT("ProcessGameEvents M_GAMEMESSAGE");
+#ifndef MASTER_GOLD
+					if (IsGameTypeSingleOrCoop())
+						Msg("[coop] ProcessGameEvents M_GAMEMESSAGE");
+#endif
 					Game().OnGameMessage(P);
 					break;
 				}

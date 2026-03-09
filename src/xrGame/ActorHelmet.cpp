@@ -70,7 +70,7 @@ void CHelmet::Load(LPCSTR section)
 void CHelmet::ReloadBonesProtection()
 {
 	CObject* parent = H_Parent();
-	if (IsGameTypeSingle())
+	if (IsGameTypeSingleOrCoop())
 		parent = smart_cast<CObject*>(Level().CurrentViewEntity());
 
 	if (parent && parent->Visual() && m_BonesProtectionSect.size())
@@ -79,7 +79,7 @@ void CHelmet::ReloadBonesProtection()
 
 BOOL CHelmet::net_Spawn(CSE_Abstract* DC)
 {
-	if (IsGameTypeSingle())
+	if (IsGameTypeSingleOrCoop())
 		ReloadBonesProtection();
 
 	BOOL res = inherited::net_Spawn(DC);
@@ -219,7 +219,7 @@ bool CHelmet::install_upgrade_impl(LPCSTR section, bool test)
 void CHelmet::AddBonesProtection(LPCSTR bones_section)
 {
 	CObject* parent = H_Parent();
-	if (IsGameTypeSingle())
+	if (IsGameTypeSingleOrCoop())
 		parent = smart_cast<CObject*>(Level().CurrentViewEntity());
 
 	if (parent && parent->Visual() && m_BonesProtectionSect.size())
