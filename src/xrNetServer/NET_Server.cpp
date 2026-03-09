@@ -247,7 +247,7 @@ IPureServer::EConnect IPureServer::Connect(LPCSTR options, GameDescriptionData& 
 	connect_options = options;
 	psNET_direct_connect = FALSE;
 
-	if (strstr(options, "/single"))
+	if (strstr(options, "/single") || strstr(options, "/coop"))
 		psNET_direct_connect = TRUE;
 
 	// Parse options
@@ -406,7 +406,25 @@ IPureServer::EConnect IPureServer::Connect(LPCSTR options, GameDescriptionData& 
 				0); // dwFlags
 			if (HostSuccess != S_OK)
 			{
-				//			xr_string res = Debug.error2string(HostSuccess);
+				// Always log the real HRESULT so we can distinguish a genuine port
+				// conflict (DPNERR_ADDRESSING = 0x80158040) from a DirectPlay
+				// compatibility failure (e.g. E_FAIL from missing DirectPlay on
+				// modern Windows, or a Wine implementation gap).
+				Msg("! IPureServer : port %d failed (hr=0x%08X)", psNET_Port, (unsigned)HostSuccess);
+
+				// DPNERR_ADDRESSING is the only error that indicates a port-binding
+				// conflict.  Any other HRESULT is a non-recoverable DirectPlay
+				// problem; scanning more ports would not help.
+				if (HostSuccess != DPNERR_ADDRESSING)
+				{
+					Msg("! IPureServer : DirectPlay returned a non-addressing error "
+					    "(hr=0x%08X). If you see E_FAIL (0x80004005): ensure "
+					    "DirectPlay is installed (Windows Features > Legacy "
+					    "Components > DirectPlay). Under Wine: run "
+					    "\"winetricks directplay\".", (unsigned)HostSuccess);
+					return ErrConnect;
+				}
+
 				if (bPortWasSet)
 				{
 					Msg("! IPureServer : port %d is BUSY!", psNET_Port);

@@ -40,6 +40,8 @@
 #include "MainMenu.h"
 #include "saved_game_wrapper.h"
 #include "level_graph.h"
+#include "ui/UICDkey.h"
+#include "../xrNetServer/NET_Common.h"
 //#include "../xrEngine/resourcemanager.h"
 //#include "../xrEngine/doug_lea_memory_allocator.h"
 #include "cameralook.h"
@@ -2375,6 +2377,169 @@ public:
 	}
 };
 
+// ---------------------------------------------------------------------------
+// Coop command helpers
+// ---------------------------------------------------------------------------
+
+// Maximum number of characters allowed for the save-name argument in
+// coop_host.  op_server is string512 (512 bytes); the fixed format
+// "%s/coop/alife/load" expands to: save_name (N chars) + "/coop/alife/load" +
+// null terminator = N + COOP_HOST_SUFFIX_LEN bytes.
+// sizeof() includes the null terminator, so it directly gives the correct value.
+static const u32 COOP_HOST_SUFFIX_LEN   = sizeof("/coop/alife/load");  // 17: 16 chars + null
+static const u32 COOP_HOST_SAVE_NAME_MAX = 512u - COOP_HOST_SUFFIX_LEN;
+
+// Maximum characters allowed for the IP/hostname in coop_connect.
+// op_client is string256 (256 bytes).  The format "%s/name=%s/port=%d" with
+// port=START_PORT_LAN_SV expands to: host + "/name=" + player_name + "/port=50001" + null.
+// Each component's size is derived from the literal/constant used in the sprintf below.
+static const u32 COOP_PLAYER_NAME_MAX     = sizeof(string64) - 1u;         // 63
+static const u32 COOP_CONNECT_NAME_PFX    = sizeof("/name=") - 1u;         // 6
+static const u32 COOP_CONNECT_PORT_SFX    = sizeof("/port=50001") - 1u;    // 11
+static const u32 COOP_CONNECT_OVERHEAD    = COOP_CONNECT_NAME_PFX + COOP_PLAYER_NAME_MAX + COOP_CONNECT_PORT_SFX + 1u;
+static const u32 COOP_CONNECT_HOST_MAX    = 256u - COOP_CONNECT_OVERHEAD;
+// Guard: COOP_CONNECT_PORT_SFX assumes START_PORT_LAN_SV has exactly 5 digits.
+// Valid port numbers are 0-65535; every value in [10000, 65535] is exactly
+// 5 decimal digits (65535 < 100000), so these bounds guarantee 5 digits.
+static_assert(START_PORT_LAN_SV >= 10000 && START_PORT_LAN_SV <= 65535,
+    "COOP_CONNECT_PORT_SFX assumes a 5-digit port number; update sizeof literal if port changes");
+
+// Replaces characters that are illegal in op_server/op_client strings with '_'.
+// The '/' character is used as a field separator by the options parser, and
+// '%' could be misinterpreted as a printf format specifier.
+static void Coop_SanitizeString(char* s)
+{
+    for (char* p = s; *p; ++p)
+    {
+        if (*p == '/' || *p == '%')
+            *p = '_';
+    }
+}
+
+// Fills `out` (size `out_sz`) with the best available player name:
+// registry value, then OS user name, then machine name, then "Player".
+// Note: Core.UserName and Core.CompName are char arrays (not pointers);
+// they are always valid but may be empty if the OS APIs returned nothing.
+// The result is sanitized: '/' and '%' are replaced with '_'.
+static void Coop_GetPlayerName(char* out, size_t out_sz)
+{
+    GetPlayerName_FromRegistry(out, (u32)out_sz);
+    if (!xr_strlen(out) && xr_strlen(Core.UserName))
+        strncpy_s(out, out_sz, Core.UserName, out_sz - 1);
+    if (!xr_strlen(out) && xr_strlen(Core.CompName))
+        strncpy_s(out, out_sz, Core.CompName, out_sz - 1);
+    if (!xr_strlen(out))
+        strncpy_s(out, out_sz, "Player", out_sz - 1);
+    Coop_SanitizeString(out);
+}
+
+// ---------------------------------------------------------------------------
+
+class CCC_CoopHost : public IConsole_Command
+{
+public:
+    CCC_CoopHost(LPCSTR N) : IConsole_Command(N) { bEmptyArgsHandled = TRUE; }
+
+    virtual void Execute(LPCSTR args)
+    {
+        string512 op_server;
+        string256 op_client;
+        string64  player_name;
+        Coop_GetPlayerName(player_name, sizeof(player_name));
+
+        if (args && xr_strlen(args))
+        {
+            // Validate save name length so xr_sprintf cannot overflow op_server.
+            if (xr_strlen(args) > COOP_HOST_SAVE_NAME_MAX)
+            {
+                Msg("! coop_host: save name too long (max %u chars), ignoring",
+                    COOP_HOST_SAVE_NAME_MAX);
+                return;
+            }
+            // Copy to mutable buffer and sanitize: '/' is the field separator in
+            // op_server, so it must not appear in the save name itself.
+            string512 save_name_buf;
+            strncpy_s(save_name_buf, sizeof(save_name_buf), args, sizeof(save_name_buf) - 1);
+            Coop_SanitizeString(save_name_buf);
+            // Load existing save
+            xr_sprintf(op_server, "%s/coop/alife/load", save_name_buf);
+        }
+        else
+        {
+            // New game
+            xr_sprintf(op_server, "all/coop/alife/new");
+        }
+        xr_sprintf(op_client, "localhost/name=%s/port=%d", player_name, START_PORT_LAN_SV);
+
+        if (g_pGameLevel)
+            Engine.Event.Defer("KERNEL:disconnect");
+
+        // Ownership of xr_strdup strings is transferred to the KERNEL:start event handler
+        // in CApplication::OnEvent (x_ray.cpp), which frees them via xr_free after use.
+        Engine.Event.Defer("KERNEL:start",
+            u64(xr_strdup(op_server)),
+            u64(xr_strdup(op_client)));
+    }
+
+    virtual void Info(TInfo& I)
+    {
+        xr_strcpy(I, "[save_name] - host a cooperative game (new game if no save specified)");
+    }
+};
+
+class CCC_CoopConnect : public IConsole_Command
+{
+public:
+    CCC_CoopConnect(LPCSTR N) : IConsole_Command(N) { bEmptyArgsHandled = TRUE; }
+
+    virtual void Execute(LPCSTR args)
+    {
+        string256 op_client;
+        string64  player_name;
+        Coop_GetPlayerName(player_name, sizeof(player_name));
+
+        // Validate host IP/hostname length so xr_sprintf cannot overflow op_client.
+        if (args && xr_strlen(args) > COOP_CONNECT_HOST_MAX)
+        {
+            Msg("! coop_connect: IP/hostname too long (max %u chars), ignoring",
+                COOP_CONNECT_HOST_MAX);
+            return;
+        }
+
+        // Copy to a mutable buffer and sanitize: '/' is the field separator in
+        // the options string, and '%' could be misinterpreted as a printf format
+        // specifier in downstream code.  Both must be replaced in user input.
+        string256 host_buf;
+        if (args && xr_strlen(args))
+        {
+            strncpy_s(host_buf, sizeof(host_buf), args, sizeof(host_buf) - 1);
+            Coop_SanitizeString(host_buf);
+        }
+        else
+        {
+            xr_strcpy(host_buf, "localhost");
+        }
+
+        xr_sprintf(op_client, "%s/name=%s/port=%d", host_buf, player_name, START_PORT_LAN_SV);
+
+        if (g_pGameLevel)
+            Engine.Event.Defer("KERNEL:disconnect");
+
+        // op_client ownership is transferred to the KERNEL:start event handler
+        // in CApplication::OnEvent (x_ray.cpp), which frees it via xr_free after use.
+        // NULL op_server is safe: net_start1() skips server creation when m_caServerOptions
+        // is empty, and xr_free(NULL) is a no-op.
+        Engine.Event.Defer("KERNEL:start",
+            u64(0),
+            u64(xr_strdup(op_client)));
+    }
+
+    virtual void Info(TInfo& I)
+    {
+        xr_strcpy(I, "[ip_address] - connect to a cooperative game server (default: localhost)");
+    }
+};
+
 void CCC_RegisterCommands()
 {
 	//Not needed for a singleplayer-only mod
@@ -3060,4 +3225,8 @@ void CCC_RegisterCommands()
 	CMD4(CCC_Float, "g_wallmark_range_skeleton", &wallmark_range_skeleton, 0.f, 1000.f);
 
     CMD4(CCC_Integer, "show_actor_body", &showActorBody, 0, 1);
+
+	// Cooperative multiplayer commands
+	CMD1(CCC_CoopHost, "coop_host");
+	CMD1(CCC_CoopConnect, "coop_connect");
 }

@@ -998,6 +998,7 @@ void WeaponUsageStatistic::SVUpdateAliveTimes()
 
 void WeaponUsageStatistic::Update()
 {
+	if (IsGameTypeSingleOrCoop()) return;
 	if (!CollectData()) return;
 	SVUpdateAliveTimes(); //update client alive time and servers total alive times
 	if (!OnServer()) return;
@@ -1020,10 +1021,17 @@ void WeaponUsageStatistic::OnUpdateRequest(NET_Packet*)
 	statistic_sync_quard syncg(m_mutex);
 
 	game_PlayerState* local_player = Game().local_player;
-	if (!xr_strlen(local_player->getName()))
+	LPCSTR playerName = local_player->getName();
+	if (!xr_strlen(playerName))
 		return;
 
-	Player_Statistic& PS = *(FindPlayer(local_player->getName()));
+	PLAYERS_STATS_it pPlayer = FindPlayer(playerName);
+	if (pPlayer == aPlayersStatistic.end())
+	{
+		Msg("! [%s] not in stats, skip", playerName);
+		return;
+	}
+	Player_Statistic& PS = *pPlayer;
 	//-------------------------------------------------
 	NET_Packet P;
 	P.w_begin(M_STATISTIC_UPDATE_RESPOND);

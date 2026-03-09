@@ -64,7 +64,7 @@ xrServer::EConnect xrServer::Connect(shared_str& session_name, GameDescriptionDa
 	// Options
 	if (0 == game) return ErrConnect;
 	//	game->type				= type_id;
-	if (game->Type() != eGameIDSingle)
+	if (game->Type() != eGameIDSingle && game->Type() != eGameIDCooperative)
 	{
 		m_file_transfers = xr_new<file_transfer::server_site>();
 		initialize_screenshot_proxies();

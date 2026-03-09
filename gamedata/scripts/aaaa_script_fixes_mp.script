@@ -582,6 +582,7 @@ end
 -- Fixed 65534 loop in this
 function trans_outfit.transparent_gg()
 	if not trans_outfit.ReadOutfitBlindnessKoeff then return end
+	if not db.actor then return end
 
 	local range1 
 	local outfit_in_slot = db.actor:item_in_slot(7)
@@ -718,6 +719,7 @@ local function t2c(t)
 end
 
 function npc_on_update_force_trader_update(npc)
+	if not db.actor then return end
 	if npc:position():distance_to_sqr(db.actor:position()) < 30^2 then
 		-- Copy checks from trade_manager with fixed restock time, fixes GAMMA
 		local id = npc:id()

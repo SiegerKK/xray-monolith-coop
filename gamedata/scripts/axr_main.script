@@ -339,6 +339,22 @@ end
 ------------------
 function main_menu_on_init(menu)
 	xrs_dyn_music.main_menu_on(menu)
+	-- Inject OnButton_multiplayer_clicked when missing.
+	-- This method is absent in SP-only Anomaly builds; without it the engine
+	-- raises a fatal "attempt to call method ... (a nil value)" at line 281 of
+	-- ui_main_menu.script whenever the Multiplayer button is clicked or when
+	-- CMainMenu::SwitchToMultiplayerMenu() is called from connection-error
+	-- recovery paths (Level_start.cpp:277, 297, 318).
+	-- axr_main.main_menu_on_init is always called for every main menu
+	-- appearance (startup AND in-game), unlike RegisterScriptCallback-based
+	-- approaches that only work after on_game_start has run.
+	if menu and menu.OnButton_multiplayer_clicked == nil then
+		menu.OnButton_multiplayer_clicked = function(self)
+			-- Phase 1 placeholder: close the main menu safely.
+			-- Replace with a coop lobby dialog in a future phase.
+			get_console():execute("main_menu off")
+		end
+	end
 end
 
 ------------------

@@ -59,10 +59,11 @@ CActor* g_actor = NULL;
 
 CActor* Actor()
 {
-	R_ASSERT2(GameID() == eGameIDSingle, "Actor() method invokation must be only in Single Player game!");
-	VERIFY(g_actor);
-	/*if (GameID() != eGameIDSingle) 
-		VERIFY	(g_actor == Level().CurrentControlEntity());*/
+	R_ASSERT2(IsGameTypeSingleOrCoop(), "Actor() method invocation must be only in Single Player or Cooperative game!");
+	// NOTE: g_actor can be NULL during initial coop spawn before actor net_Spawn sets it.
+	// Callers must guard against NULL (e.g. updateMovementLayerState already does if(!pActor) return).
+	if (!g_actor)
+		Msg("[coop] Actor(): g_actor is NULL (actor not yet spawned)");
 	return (g_actor);
 };
 
@@ -690,14 +691,13 @@ BOOL CActor::net_Spawn(CSE_Abstract* DC)
 	m_bWasHitted = false;
 	m_dwILastUpdateTime = 0;
 
-	if (IsGameTypeSingle())
+	if (IsGameTypeSingleOrCoop())
 	{
 		Level().MapManager().AddMapLocation("actor_location", ID());
 		Level().MapManager().AddMapLocation("actor_location_p", ID());
 
 		m_statistic_manager = xr_new<CActorStatisticMgr>();
 	}
-
 
 	spatial.type |= STYPE_REACTTOSOUND;
 	psHUD_Flags.set(HUD_WEAPON_RT,TRUE);

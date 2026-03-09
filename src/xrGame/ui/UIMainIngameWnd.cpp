@@ -286,7 +286,7 @@ void CUIMainIngameWnd::Draw()
 	}
 	FS.dwOpenCounter = 0;
 
-	if (!IsGameTypeSingle())
+	if (!IsGameTypeSingleOrCoop())
 	{
 		float luminocity = smart_cast<CGameObject*>(Level().CurrentEntity())->ROS()->get_luminocity();
 		float power = log(luminocity > .001f ? luminocity : .001f) * (1.f/*luminocity_factor*/);
@@ -361,7 +361,7 @@ void CUIMainIngameWnd::Update()
 	}
 
 	UpdateMainIndicators();
-	if (IsGameTypeSingle())
+	if (IsGameTypeSingleOrCoop())
 		return;
 
 	// ewiArtefact
@@ -678,7 +678,7 @@ void CUIMainIngameWnd::UpdateMainIndicators()
 		return;
 
 	UpdateQuickSlots();
-	if (IsGameTypeSingle())
+	if (IsGameTypeSingleOrCoop())
 		CurrentGameUI()->GetPdaMenu().UpdateRankingWnd();
 
 	u8 flags = 0;
@@ -817,7 +817,7 @@ void CUIMainIngameWnd::UpdateMainIndicators()
 	float cur_weight = pActor->inventory().TotalWeight();
 	float max_weight = pActor->MaxWalkWeight();
 	m_ind_overweight->Show(false);
-	if (cur_weight >= max_weight - 10.0f && IsGameTypeSingle())
+	if (cur_weight >= max_weight - 10.0f && IsGameTypeSingleOrCoop())
 	{
 		m_ind_overweight->Show(true);
 		if (cur_weight > max_weight)

@@ -114,7 +114,7 @@ bool CLevel::net_start1()
 		typedef IGame_Persistent::params params;
 		params& p = g_pGamePersistent->m_game_params;
 		// Connect
-		if (!xr_strcmp(p.m_game_type, "single"))
+		if (!xr_strcmp(p.m_game_type, "single") || !xr_strcmp(p.m_game_type, "coop"))
 		{
 			Server = xr_new<xrServer>();
 		}
@@ -354,7 +354,7 @@ void CLevel::InitializeClientGame(NET_Packet& P)
 	game->Init();
 	m_bGameConfigStarted = TRUE;
 
-	if (!IsGameTypeSingle())
+	if (!IsGameTypeSingleOrCoop())
 	{
 		init_compression();
 	}

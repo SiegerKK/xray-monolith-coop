@@ -164,6 +164,8 @@ void CHudItem::OnEvent(NET_Packet& P, u16 type)
 		{
 			u8 S;
 			P.r_u8(S);
+			Msg("[coop] CHudItem::OnEvent GE_WPN_STATE_CHANGE obj_id=%u S=%u g_player_hud=%s",
+				object().ID(), u32(S), g_player_hud ? "valid" : "NULL");
 			OnStateSwitch(u32(S), GetState());
 		}
 		break;
@@ -172,6 +174,8 @@ void CHudItem::OnEvent(NET_Packet& P, u16 type)
 
 void CHudItem::OnStateSwitch(u32 S, u32 oldState)
 {
+	Msg("[coop] CHudItem::OnStateSwitch obj_id=%u S=%u oldState=%u g_player_hud=%s",
+		object().ID(), S, oldState, g_player_hud ? "valid" : "NULL");
 	m_lastState = oldState;
 	SetState(S);
 
