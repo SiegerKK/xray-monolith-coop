@@ -28,6 +28,7 @@ local danger_reputations = {} -- player reputations and the number of possible b
 
 --====================================< Utilities >====================================--
 function try_spawn()
+	if not db.actor then return end
 	-- gather factions
 	local enemy_factions = {}
 	for i=1,#factions do
@@ -119,7 +120,8 @@ end
 function spawn_timer()
 	--printf("-bounty_squads.spawn_timer called")
 	ResetTimeEvent("cycle","bounty_squad_spawn",delay_spawn)
-	
+	if not db.actor then return false end
+
 	local num = 0
 
 	-- check rank
@@ -163,7 +165,8 @@ end
 function state_timer()
 	--printf("-bounty_squads.state_timer called")
 	ResetTimeEvent("cycle","bounty_squad_state",delay_state)
-	
+	if not db.actor then return false end
+
 	-- clean
 	for k,v in pairs(active_squads) do
 		local se = alife_object(k)
