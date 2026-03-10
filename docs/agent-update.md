@@ -132,6 +132,7 @@ IC bool IsGameTypeSingleOrCoop() {
 | `[coop] ProcessGameEvents M_SPAWN: section=X obj_id=Y parent_id=Z` | `src/xrGame/Level.cpp:867` | Трекинг всех спавнов объектов |
 | `[coop] ProcessGameEvents M_EVENT: event_type=T destination_id=D` | `src/xrGame/Level.cpp:880` | Трекинг всех игровых событий |
 | `[coop] ProcessGameEvents M_EVENT: cl_Process_Event returned type=T dest=D` | `src/xrGame/Level.cpp:883` | Подтверждение обработки события |
+| `[coop] ProcessGameEvents: done, processed N events` | `src/xrGame/Level.cpp:~948` | **Рубеж** — если эта строка есть перед крашем, он происходит ВНЕ ProcessGameEvents (в OnFrame/Objects.Update). Если нет — внутри |
 | `[coop] ProcessGameEvents M_GAMEMESSAGE` | `src/xrGame/Level.cpp:924` | Системные сообщения |
 | `[coop] CLevelChanger::net_Spawn: ...` | `src/xrGame/level_changer.cpp:59-110` | Детальный трекинг спавна level_changer |
 | `[coop] ALife switch_online/offline: [name][section][ID]` | `src/xrGame/alife_switch_manager.cpp:114,126` | ALife онлайн/офлайн переключения |
@@ -141,7 +142,8 @@ IC bool IsGameTypeSingleOrCoop() {
 **ВАЖНО:** Логирование по одной строке на кадр (A–G в `Level.cpp`,
 D1–D3 в `IGame_Level.cpp`) было **удалено** — порождало 500+ строк/сек и
 замораживало экран загрузки. Не добавлять обратно. Использовать только
-событийные логи.
+событийные логи. Новый лог `done, processed N events` срабатывает только
+когда в батче были события — он НЕ per-frame.
 
 M_SPAWN лог использует `r_tell()`/`r_seek()` для peek пакета без смещения
 указателя чтения — чтение данных без потребления.
@@ -160,39 +162,71 @@ M_SPAWN лог использует `r_tell()`/`r_seek()` для peek пакет
 - Игрок может находиться на уровне продолжительное время без крашей
 
 ### Текущий блокер ⚠️
-**Краш при переходе между локациями (level transition)**
+**Краш при переходе между локациями (level transition) — повторяется**
 
-При подходе к level_changer (переход на k00_marsh) игра падает. Краш
-происходит **после** успешной обработки всех M_SPAWN и M_EVENT для новой
-локации. Адрес краша: `0x00000001403A3BBA` (нет символов).
+Краш воспроизводится стабильно при подходе к level_changer.
+Зафиксированы два краша с одинаковым ПАТТЕРНОМ, но разными адресами:
 
-**Последние строки перед крашем:**
+| Краш | Адрес | Ключевая строка перед крашем |
+|------|-------|------------------------------|
+| #1 | `0x00000001403A3BBA` | `cl_Process_Event returned type=19 dest=22754` |
+| #2 | `0x00000001402E11C7` | `cl_Process_Event returned type=19 dest=22989` |
+
+**Event type 19 = `GE_WPN_STATE_CHANGE`** (из `xrMessages.h` enum, 0-indexed).
+Это событие смены состояния оружия — происходит при загрузке новой локации
+когда сервер синхронизирует состояния всех оружий/PDA.
+
+**Расшифровка паттерна:**
+1. Серия GE_WPN_STATE_CHANGE успешно обрабатывается (все "returned" логи есть)
+2. ProcessGameEvents завершает работу
+3. Краш происходит где-то в коде ПОСЛЕ последнего M_EVENT в пределах OnFrame
+
+**Критический диагностический рубеж** (добавлен в Level.cpp):
 ```
-[coop] CLevelChanger::net_Spawn: done bOk=1
-[coop] ProcessGameEvents M_SPAWN: ... (сотни объектов k00_marsh)
-[coop] ProcessGameEvents M_EVENT: event_type=19 destination_id=22754
-[coop] ProcessGameEvents M_EVENT: cl_Process_Event returned type=19 dest=22754
-stack trace:
-  at address 0x00000001403A3BBA
+[coop] ProcessGameEvents: done, processed N events
 ```
+- Если эта строка **есть** перед крашем → краш в `OnFrame` ПОСЛЕ ProcessGameEvents
+  (скорее всего в `ProcessSpawnEvents()` или `Objects.Update(false)`)
+- Если этой строки **нет** → краш внутри ProcessGameEvents (в cleanup-коде)
 
-**Вероятные причины** (в порядке убывания вероятности):
-1. `actor_binder:net_spawn` на новой локации — `db.actor` из старой локации
-   ещё жив или уже nil, а код ожидает конкретное состояние
-2. `level.script:on_game_start()` — колбэк уровня вызывается до того, как
-   `db.add_actor()` отработал
-3. Пропущенный `IsGameTypeSingleOrCoop()` guard в `CLevel::ChangeLevel()` или
-   `game_cl_single` при переключении уровня
-4. Глобальное Lua-состояние с ссылками на C++-объекты первой локации,
-   которые уже уничтожены
+**Анализ внутренних функций:**
+- `CHudItem::OnStateSwitch` — полностью безопасен:
+  - `IsAttachedToHUD()` содержит `if (!g_player_hud) return false` guard (line 977)
+  - `if (g_player_hud) updateMovementLayerState()` — guarded (line 210)
+  - Lua callback `CHudItem__OnStateSwitch` — scoped functor
+- `CWeapon::OnStateSwitch` — полностью безопасен:
+  - `H_Parent() == Level().CurrentEntity()` — safe null comparison
+  - `Actor()` — возвращает `g_actor`, логирует warning если NULL, не падает
+- Деструкторы `ProcessGameEventsData` / `ProcessNetPacket` — тривиальные (NET_Packet)
 
-**Как диагностировать:**
+**Вероятные кандидаты на краш** (после добавления рубежного лога):
+1. `ProcessSpawnEvents()` — обрабатывает отложенные spawn-события
+   (SPAWN_ANTIFREEZE), вызывает `cl_Process_Spawn` → `net_Spawn` для отложенных
+   объектов. Crash address в диапазоне 0x2E11C7 — 0x3A3BBA
+2. `Objects.Update(false)` в `IGame_Level::OnFrame()` — первый `Update()` для
+   всех свежеспавненных объектов. Оружия/PDA могут обращаться к null-указателям
+   в первом кадре после смены уровня
+3. `g_hud->OnFrame()` — обновление HUD после смены уровня
+
+**Следующий шаг:** запустить с новым бинарником и проверить есть ли
+`ProcessGameEvents: done, processed N events` ПЕРЕД крашем.
+
+**Как диагностировать дальше (если "done" есть):**
 ```lua
 -- В actor_binder.script, начало net_spawn:
 Msg("[coop] actor_binder:net_spawn called, db.actor=%s", tostring(db.actor))
 
 -- В level.script или bind_level.script:
 Msg("[coop] level on_game_start called")
+```
+
+```cpp
+// В IGame_Level::OnFrame, при подозрении на Objects.Update:
+// Добавить временно ДО и ПОСЛЕ Objects.Update(false) один раз:
+Msg("[coop] IGame_Level::OnFrame: before Objects.Update");
+Objects.Update(false);
+Msg("[coop] IGame_Level::OnFrame: after Objects.Update");
+// УДАЛИТЬ после определения места краша — это per-frame лог!
 ```
 
 ---

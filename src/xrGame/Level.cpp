@@ -943,6 +943,9 @@ void CLevel::ProcessGameEvents()
 	}
 #endif
 
+	if (IsGameTypeSingleOrCoop() && !events_to_process.empty())
+		Msg("[coop] ProcessGameEvents: done, processed %u events", (u32)events_to_process.size());
+
 	if (OnServer() && !IsGameTypeSingleOrCoop())
 		Game().m_WeaponUsageStatistic->Send_Check_Respond();
 }
