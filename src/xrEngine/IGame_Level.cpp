@@ -193,8 +193,16 @@ void IGame_Level::OnFrame()
 
 	// Update all objects
 	VERIFY(bReady);
+	const u32 eGameType = g_pGamePersistent->GameType();
+	const bool bSPorCoop = (eGameType == eGameIDSingle || eGameType == eGameIDCooperative);
+	if (bSPorCoop)
+		Msg("[coop] OnFrame: D1 (before Objects.Update) frame=%u", Device.dwFrame);
 	Objects.Update(false);
+	if (bSPorCoop)
+		Msg("[coop] OnFrame: D2 (after Objects.Update) frame=%u", Device.dwFrame);
 	g_hud->OnFrame();
+	if (bSPorCoop)
+		Msg("[coop] OnFrame: D3 (after g_hud->OnFrame) frame=%u", Device.dwFrame);
 
 	// Ambience
 	if (Sounds_Random.size() && (Device.dwTimeGlobal > Sounds_Random_dwNextTime))
