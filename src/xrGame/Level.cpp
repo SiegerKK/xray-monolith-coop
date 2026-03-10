@@ -944,7 +944,10 @@ void CLevel::ProcessGameEvents()
 #endif
 
 	if (IsGameTypeSingleOrCoop() && !events_to_process.empty())
-		Msg("[coop] ProcessGameEvents: done, processed %u events", (u32)events_to_process.size());
+	{
+		m_coop_last_event_batch = (u32)events_to_process.size();
+		Msg("[coop] ProcessGameEvents: done, processed %u events", m_coop_last_event_batch);
+	}
 
 	if (OnServer() && !IsGameTypeSingleOrCoop())
 		Game().m_WeaponUsageStatistic->Send_Check_Respond();
@@ -1046,6 +1049,7 @@ void CLevel::OnFrame()
 		}
 	}
 #endif
+	if (m_coop_last_event_batch) Msg("[coop] OnFrame: A (post-SpawnEvents)");
 
 	if (m_bNeed_CrPr)
 		make_NetCorrectionPrediction();
@@ -1067,8 +1071,10 @@ void CLevel::OnFrame()
 			GameTaskManager().UpdateTasks();
 		}
 	}
+	if (m_coop_last_event_batch) Msg("[coop] OnFrame: B (post-MapManager/GameTaskMgr)");
 	// Inherited update
 	inherited::OnFrame();
+	if (m_coop_last_event_batch) Msg("[coop] OnFrame: C (post-inherited::OnFrame)");
 	// Draw client/server stats
 	if (!g_dedicated_server && psDeviceFlags.test(rsStatistic))
 	{
@@ -1160,6 +1166,7 @@ void CLevel::OnFrame()
 		ai().script_engine().script_process(ScriptEngine::eScriptProcessorLevel)->update();
 	m_ph_commander->update();
 	m_ph_commander_scripts->update();
+	if (m_coop_last_event_batch) Msg("[coop] OnFrame: D (post-script/ph_commander)");
 	Device.Statistic->TEST0.Begin();
 	BulletManager().CommitRenderSet();
 	Device.Statistic->TEST0.End();
@@ -1183,6 +1190,7 @@ void CLevel::OnFrame()
 		else
 			script_gc();
 	}
+	if (m_coop_last_event_batch) Msg("[coop] OnFrame: E (post-BulletMgr/sounds/GC)");
 	if (pStatGraphR)
 	{
 		static float fRPC_Mult = 10.0f;
@@ -1193,6 +1201,7 @@ void CLevel::OnFrame()
 
 	for (auto& pair : m_script_attachments)
 		pair.second->Update();
+	m_coop_last_event_batch = 0;
 }
 
 int psLUA_GCSTEP = 300;
