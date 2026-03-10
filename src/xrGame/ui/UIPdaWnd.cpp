@@ -92,7 +92,7 @@ void CUIPdaWnd::Init()
 	CUIXmlInit::InitProgressBar(uiXml, "battery_bar", 0, m_battery_bar);
 	m_battery_bar->Show(true);
 
-	if (IsGameTypeSingle())
+	if (IsGameTypeSingleOrCoop())
 	{
 		pUITaskWnd = xr_new<CUITaskWnd>();
 		pUITaskWnd->hint_wnd = m_hint_wnd;
@@ -266,7 +266,8 @@ void CUIPdaWnd::Update()
 
 	m_battery_bar->SetProgressPos(m_power);
 
-	pUILogsWnd->PerformWork();
+	if (pUILogsWnd)
+		pUILogsWnd->PerformWork();
 }
 
 void CUIPdaWnd::SetActiveSubdialog(const shared_str& section)
@@ -362,7 +363,8 @@ void CUIPdaWnd::Show_SecondTaskWnd(bool status)
 	{
 		SetActiveSubdialog("eptTasks");
 	}
-	pUITaskWnd->Show_TaskListWnd(status);
+	if (pUITaskWnd)
+		pUITaskWnd->Show_TaskListWnd(status);
 }
 
 void CUIPdaWnd::Show_MapLegendWnd(bool status)
@@ -371,7 +373,8 @@ void CUIPdaWnd::Show_MapLegendWnd(bool status)
 	{
 		SetActiveSubdialog("eptTasks");
 	}
-	pUITaskWnd->ShowMapLegend(status);
+	if (pUITaskWnd)
+		pUITaskWnd->ShowMapLegend(status);
 }
 
 void CUIPdaWnd::Draw()
@@ -391,11 +394,13 @@ void CUIPdaWnd::DrawHint()
 {
 	if (m_sActiveSection == "eptTasks")
 	{
-		pUITaskWnd->DrawHint();
+		if (pUITaskWnd)
+			pUITaskWnd->DrawHint();
 	}
 	else if (m_sActiveSection == "eptRanking")
 	{
-		pUIRankingWnd->DrawHint();
+		if (pUIRankingWnd)
+			pUIRankingWnd->DrawHint();
 	}
 	else if (m_sActiveSection == "eptLogs")
 	{
@@ -405,17 +410,20 @@ void CUIPdaWnd::DrawHint()
 
 void CUIPdaWnd::UpdatePda()
 {
-	pUILogsWnd->UpdateNews();
+	if (pUILogsWnd)
+		pUILogsWnd->UpdateNews();
 
 	if (m_sActiveSection == "eptTasks")
 	{
-		pUITaskWnd->ReloadTaskInfo();
+		if (pUITaskWnd)
+			pUITaskWnd->ReloadTaskInfo();
 	}
 }
 
 void CUIPdaWnd::UpdateRankingWnd()
 {
-	pUIRankingWnd->Update();
+	if (pUIRankingWnd)
+		pUIRankingWnd->Update();
 }
 
 void CUIPdaWnd::Reset()
