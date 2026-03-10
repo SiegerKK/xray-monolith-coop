@@ -881,6 +881,8 @@ void CLevel::ProcessGameEvents()
 					if (IsGameTypeSingleOrCoop())
 						Msg("[coop] ProcessGameEvents M_EVENT: event_type=%u destination_id=%u", type, dest);
 					cl_Process_Event(dest, type, P);
+					if (IsGameTypeSingleOrCoop())
+						Msg("[coop] ProcessGameEvents M_EVENT: cl_Process_Event returned type=%u dest=%u", type, dest);
 					break;
 				}
 			case M_MOVE_PLAYERS:
@@ -943,8 +945,12 @@ void CLevel::ProcessGameEvents()
 	}
 #endif
 
-	if (OnServer() && GameID() != eGameIDSingle)
+	if (IsGameTypeSingleOrCoop())
+		Msg("[coop] ProcessGameEvents: for-loop done, about to call Send_Check_Respond check");
+	if (OnServer() && !IsGameTypeSingleOrCoop())
 		Game().m_WeaponUsageStatistic->Send_Check_Respond();
+	if (IsGameTypeSingleOrCoop())
+		Msg("[coop] ProcessGameEvents: done");
 }
 
 #ifdef DEBUG_MEMORY_MANAGER
