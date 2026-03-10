@@ -1203,6 +1203,7 @@ void CLevel::OnFrame()
 	for (auto& pair : m_script_attachments)
 		pair.second->Update();
 	if (m_coop_last_event_count) Msg("[coop] OnFrame: G (post-script_attachments)");
+	m_coop_render_event_count = m_coop_last_event_count;
 	m_coop_last_event_count = 0;
 }
 
@@ -1258,6 +1259,7 @@ extern int ps_r4_hdr10_pda; // NOTE: this is a hack to avoid double HDR tonemapp
 
 void CLevel::OnRender()
 {
+	if (m_coop_render_event_count) Msg("[coop] OnRender: H (pre-PDA)");
 	// PDA
 	if (game && CurrentGameUI() && &CurrentGameUI()->GetPdaMenu() != nullptr)
 	{
@@ -1316,9 +1318,14 @@ void CLevel::OnRender()
 		}
 	}
 
+	if (m_coop_render_event_count) Msg("[coop] OnRender: I (pre-inherited::OnRender)");
 	inherited::OnRender();
 	if (!game)
+	{
+		m_coop_render_event_count = 0;
 		return;
+	}
+	if (m_coop_render_event_count) Msg("[coop] OnRender: J (post-inherited::OnRender)");
 	Game().OnRender();
 	BulletManager().Render();
 
@@ -1328,9 +1335,13 @@ void CLevel::OnRender()
 	if (use_reshade)
 		render_reshade_effects();
 
+	if (m_coop_render_event_count) Msg("[coop] OnRender: K (pre-HUD::RenderUI)");
 	HUD().RenderUI();
 
+	if (m_coop_render_event_count) Msg("[coop] OnRender: L (pre-ScriptDebugRender)");
 	ScriptDebugRender();
+	if (m_coop_render_event_count) Msg("[coop] OnRender: M (done)");
+	m_coop_render_event_count = 0;
 
 #ifdef DEBUG
     draw_wnds_rects();
