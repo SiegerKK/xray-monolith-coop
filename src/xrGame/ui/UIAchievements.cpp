@@ -44,7 +44,7 @@ void CUIAchievements::Update()
 	::luabind::functor<bool> f;
 	if (!ai().script_engine().functor(m_functor_str, f))
 	{
-		Msg("![coop] CUIAchievements::Update: functor '%s' not found, skipping achievement update", m_functor_str);
+		Msg("[coop] WARNING: CUIAchievements::Update: functor '%s' not found, skipping achievement update", m_functor_str);
 		return;
 	}
 	if (f())
