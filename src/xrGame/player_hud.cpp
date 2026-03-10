@@ -1360,27 +1360,18 @@ void player_hud::update(const Fmatrix& cam_trans)
 void player_hud::updateMovementLayerState()
 {
 	CActor* pActor = Actor();
-	Msg("[coop] player_hud::updateMovementLayerState pActor=%s g_actor=%s items[0]=%s items[1]=%s",
-		pActor ? "valid" : "NULL", g_actor ? "valid" : "NULL",
-		m_attached_items[0] ? "valid" : "NULL",
-		m_attached_items[1] ? "valid" : "NULL");
 
 	if (!pActor)
 		return;
 
-	Msg("[coop] updateMovementLayerState: stopping %u movement layers", (u32)m_movement_layers.size());
 	for (movement_layer* anm : m_movement_layers)
 	{
 		anm->Stop(false);
 	}
 
-	Msg("[coop] updateMovementLayerState: computing need_blend (script_anim_part=%u)", (u32)script_anim_part);
 	bool nb0 = m_attached_items[0] && m_attached_items[0]->m_parent_hud_item && m_attached_items[0]->m_parent_hud_item->NeedBlendAnm();
-	Msg("[coop] updateMovementLayerState: nb0=%d", (int)nb0);
 	bool nb1 = m_attached_items[1] && m_attached_items[1]->m_parent_hud_item && m_attached_items[1]->m_parent_hud_item->NeedBlendAnm();
-	Msg("[coop] updateMovementLayerState: nb1=%d", (int)nb1);
 	bool need_blend = (script_anim_part != u8(-1) || nb0 || nb1);
-	Msg("[coop] updateMovementLayerState: need_blend=%d", (int)need_blend);
 
 	if (need_blend)
 	{
@@ -1389,24 +1380,17 @@ void player_hud::updateMovementLayerState()
 		if (m_attached_items[0] && m_attached_items[0]->m_parent_hud_item && m_attached_items[0]->m_parent_hud_item->has_object() && m_attached_items[0]->m_parent_hud_item->object().cast_weapon())
 			wep = m_attached_items[0]->m_parent_hud_item->object().cast_weapon();
 
-		Msg("[coop] updateMovementLayerState: wep=%s", wep ? "valid" : "NULL");
-
 		if (wep && wep->IsZoomed()) {
-			Msg("[coop] updateMovementLayerState: Play eAimIdle");
 			m_movement_layers[eAimIdle]->Play();
 		}
 		else {
-			Msg("[coop] updateMovementLayerState: Play eIdle");
 			m_movement_layers[eIdle]->Play();
 		}
 
-		Msg("[coop] updateMovementLayerState: checking AnyMove");
 		if (pActor->AnyMove())
 		{
 			CEntity::SEntityState state;
-			Msg("[coop] updateMovementLayerState: calling g_State");
 			pActor->g_State(state);
-			Msg("[coop] updateMovementLayerState: g_State done bCrouch=%d bSprint=%d", (int)state.bCrouch, (int)state.bSprint);
 
 			if (wep && wep->IsZoomed()) {
 				state.bCrouch ? m_movement_layers[eAimCrouch]->Play() : m_movement_layers[eAimWalk]->Play();
@@ -1425,7 +1409,6 @@ void player_hud::updateMovementLayerState()
 			}
 		}
 	}
-	Msg("[coop] updateMovementLayerState: done");
 }
 
 void player_hud::PlayBlendAnm(LPCSTR name, u8 part, float speed, float power, bool bLooped, bool no_restart, LPCSTR pivot_bone)

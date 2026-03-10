@@ -16,7 +16,7 @@ function set_active_subdialog(section)
 	
 	-- For NPCs PDA
 	if (section == "eptNPC") then
-		local obj = db.actor:active_item() or db.actor:item_in_slot(14)
+		local obj = db.actor and (db.actor:active_item() or db.actor:item_in_slot(14))
 		if obj then
 			local sec = obj and obj:section()
 			if item_device.device_npc_pda[sec] then
@@ -169,6 +169,7 @@ function get_stat(index) -- index= int        return string
 	elseif(index==17) then 
 		return (game_statistics.get_actor_visited_levels_count() .. "/33")
 	elseif(index==18) then 
+		if not db.actor then return "" end
 		return (db.actor:money() .. " RU")
 	end
 	return ""
@@ -576,9 +577,9 @@ function coc_rankings_set_description(index)
 	local se_obj = coc_ranking_list[index] ~= nil and alife_object(coc_ranking_list[index])
 	if (se_obj) then
 			local faction_color = "%c[255,255,255,1]"
-		if (game_relations.is_factions_enemies(db.actor:character_community(),se_obj:community())) then
+		if (db.actor and game_relations.is_factions_enemies(db.actor:character_community(),se_obj:community())) then
 			faction_color = "%c[255,255,1,1]"
-		elseif (game_relations.is_factions_friends(db.actor:character_community(),se_obj:community())) then
+		elseif (db.actor and game_relations.is_factions_friends(db.actor:character_community(),se_obj:community())) then
 			faction_color = "%c[255,1,255,1]"
 		end
 		
@@ -607,7 +608,7 @@ function coc_rankings_set_icon(index)
 		local icon_name
 		if (se_obj.id == AC_ID) then 
 			if (ui_options.get("gameplay/general/outfit_portrait") == true) then
-				local outfit = db.actor:item_in_slot(7)
+				local outfit = db.actor and db.actor:item_in_slot(7)
 				if (outfit) then 
 					local icon = ini_sys:r_string_ex(outfit:section(),"character_portrait")
 					if (icon and icon ~= "") then
@@ -615,7 +616,7 @@ function coc_rankings_set_icon(index)
 					end
 				end 
 			end
-			icon_name = db.actor:character_icon()
+			icon_name = db.actor and db.actor:character_icon()
 		else
 			local npc = db.storage[se_obj.id] and db.storage[se_obj.id].object
 			if (npc) then
@@ -646,6 +647,7 @@ function discover_spots()
 	ResetTimeEvent(0,"ScanForSpots",3)
 	
 	local actor = db.actor
+	if not actor then return end
 	for k,v in pairs(primary_objects_tbl) do
 		if actor:dont_has_info(v.target) then
 			local obj_id = get_story_object_id(v.target)

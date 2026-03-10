@@ -473,23 +473,17 @@ BOOL CGameObject::net_Spawn(CSE_Abstract* DC)
 	// If funct were destroyed after CScriptBinder::net_Spawn (which itself runs
 	// Lua code), the Lua reference it holds can be invalidated by Lua GC,
 	// crashing the destructor's lua_unref.  Same pattern as CHudItem::OnStateSwitch.
-	Msg("[coop] CGameObject::net_Spawn: before CGameObject_NetSpawn obj=%s id=%u", *cName(), ID());
 	{
 		::luabind::functor<void> funct;
 		const bool funct_found = ai().script_engine().functor("_G.CGameObject_NetSpawn", funct);
-		Msg("[coop] CGameObject::net_Spawn: functor_found=%d obj=%s", (int)funct_found, *cName());
 		if (funct_found)
 		{
 			CScriptGameObject* sgo = lua_game_object();
-			Msg("[coop] CGameObject::net_Spawn: calling funct sgo=%s obj=%s", sgo ? "valid" : "NULL", *cName());
 			if (sgo)
 				funct(sgo);
-			Msg("[coop] CGameObject::net_Spawn: funct done obj=%s", *cName());
 		}
 	} // luabind::functor<void> destructor runs here, before CScriptBinder::net_Spawn
-	Msg("[coop] CGameObject::net_Spawn: before CScriptBinder::net_Spawn obj=%s", *cName());
 	BOOL result = CScriptBinder::net_Spawn(DC);
-	Msg("[coop] CGameObject::net_Spawn: CScriptBinder::net_Spawn returned %d obj=%s", (int)result, *cName());
 	return result;
 #endif
 

@@ -360,7 +360,6 @@ void CUIMainIngameWnd::Update()
 		SetWarningIconColor(ewiInvincible, 0x00ffffff);
 	}
 
-	Msg("[coop] UIMainIngameWnd::Update: before UpdateMainIndicators frame=%u", Device.dwFrame);
 	UpdateMainIndicators();
 	if (IsGameTypeSingleOrCoop())
 		return;
@@ -678,11 +677,9 @@ void CUIMainIngameWnd::UpdateMainIndicators()
 	if (!pActor)
 		return;
 
-	Msg("[coop] UpdateMainIndicators: before UpdateQuickSlots frame=%u", Device.dwFrame);
 	UpdateQuickSlots();
 	if (IsGameTypeSingleOrCoop())
 	{
-		Msg("[coop] UpdateMainIndicators: before UpdateRankingWnd frame=%u", Device.dwFrame);
 		CurrentGameUI()->GetPdaMenu().UpdateRankingWnd();
 	}
 

@@ -456,8 +456,6 @@ void CLevel::cl_Process_Event(u16 dest, u16 type, NET_Packet& P)
             Game().OnDestroy(GO);
         }
         GO->OnEvent(P, type);
-        if (IsGameTypeSingleOrCoop())
-            Msg("[coop] cl_Process_Event: OnEvent returned type=%u dest=%u", type, dest);
     }
     else
     {
@@ -945,12 +943,8 @@ void CLevel::ProcessGameEvents()
 	}
 #endif
 
-	if (IsGameTypeSingleOrCoop())
-		Msg("[coop] ProcessGameEvents: for-loop done, about to call Send_Check_Respond check");
 	if (OnServer() && !IsGameTypeSingleOrCoop())
 		Game().m_WeaponUsageStatistic->Send_Check_Respond();
-	if (IsGameTypeSingleOrCoop())
-		Msg("[coop] ProcessGameEvents: done");
 }
 
 #ifdef DEBUG_MEMORY_MANAGER
@@ -1035,7 +1029,6 @@ void CLevel::OnFrame()
 	}
 	
 	ProcessGameEvents();
-	if (IsGameTypeSingleOrCoop()) Msg("[coop] OnFrame: A (after ProcessGameEvents) frame=%u", Device.dwFrame);
 #ifdef SPAWN_ANTIFREEZE
 	{
 		bool queueEmpty = false;
@@ -1050,7 +1043,6 @@ void CLevel::OnFrame()
 		}
 	}
 #endif
-	if (IsGameTypeSingleOrCoop()) Msg("[coop] OnFrame: B (after spawn events) frame=%u", Device.dwFrame);
 
 	if (m_bNeed_CrPr)
 		make_NetCorrectionPrediction();
@@ -1072,11 +1064,8 @@ void CLevel::OnFrame()
 			GameTaskManager().UpdateTasks();
 		}
 	}
-	if (IsGameTypeSingleOrCoop()) Msg("[coop] OnFrame: C (after MapManager) frame=%u", Device.dwFrame);
 	// Inherited update
-	if (IsGameTypeSingleOrCoop()) Msg("[coop] OnFrame: D (before inherited::OnFrame) frame=%u", Device.dwFrame);
 	inherited::OnFrame();
-	if (IsGameTypeSingleOrCoop()) Msg("[coop] OnFrame: E (after inherited::OnFrame) frame=%u", Device.dwFrame);
 	// Draw client/server stats
 	if (!g_dedicated_server && psDeviceFlags.test(rsStatistic))
 	{
@@ -1166,10 +1155,8 @@ void CLevel::OnFrame()
 	                                             game->GetEnvironmentGameTimeFactor());
 	if (!g_dedicated_server)
 		ai().script_engine().script_process(ScriptEngine::eScriptProcessorLevel)->update();
-	if (IsGameTypeSingleOrCoop()) Msg("[coop] OnFrame: F (after script_process) frame=%u", Device.dwFrame);
 	m_ph_commander->update();
 	m_ph_commander_scripts->update();
-	if (IsGameTypeSingleOrCoop()) Msg("[coop] OnFrame: G (after ph_commander) frame=%u", Device.dwFrame);
 	Device.Statistic->TEST0.Begin();
 	BulletManager().CommitRenderSet();
 	Device.Statistic->TEST0.End();
