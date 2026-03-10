@@ -1199,8 +1199,10 @@ void CLevel::OnFrame()
 		pStatGraphR->AppendItem(float(m_dwRPS) * fRPS_Mult, 0xff00ff00, 0);
 	}
 
+	if (m_coop_last_event_count) Msg("[coop] OnFrame: F (pre-script_attachments, n=%u)", (u32)m_script_attachments.size());
 	for (auto& pair : m_script_attachments)
 		pair.second->Update();
+	if (m_coop_last_event_count) Msg("[coop] OnFrame: G (post-script_attachments)");
 	m_coop_last_event_count = 0;
 }
 

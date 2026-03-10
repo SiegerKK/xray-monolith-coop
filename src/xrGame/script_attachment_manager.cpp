@@ -259,6 +259,11 @@ void script_attachment::Update()
 					CActor* act = smart_cast<CActor*>(m_parent_object);
 					if (act)
 					{
+						if (!g_player_hud)
+						{
+							target = Fidentity;
+							continue;
+						}
 						if (bone >= g_player_hud->m_model->dcast_PKinematics()->LL_BoneCount())
 							target = Fidentity;
 						else
