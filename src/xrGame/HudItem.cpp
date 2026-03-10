@@ -207,7 +207,8 @@ void CHudItem::OnStateSwitch(u32 S, u32 oldState)
 		break;
 	}
 
-	g_player_hud->updateMovementLayerState();
+	if (g_player_hud)
+		g_player_hud->updateMovementLayerState();
 
 	// Scope funct so its destructor runs BEFORE exit. If funct were destroyed
 	// after re-entrant Lua code, the Lua reference can be invalidated by GC,
