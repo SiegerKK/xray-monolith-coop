@@ -945,8 +945,8 @@ void CLevel::ProcessGameEvents()
 
 	if (IsGameTypeSingleOrCoop() && !events_to_process.empty())
 	{
-		m_coop_last_event_batch = (u32)events_to_process.size();
-		Msg("[coop] ProcessGameEvents: done, processed %u events", m_coop_last_event_batch);
+		m_coop_last_event_count = (u32)events_to_process.size();
+		Msg("[coop] ProcessGameEvents: done, processed %u events", m_coop_last_event_count);
 	}
 
 	if (OnServer() && !IsGameTypeSingleOrCoop())
@@ -1049,7 +1049,7 @@ void CLevel::OnFrame()
 		}
 	}
 #endif
-	if (m_coop_last_event_batch) Msg("[coop] OnFrame: A (post-SpawnEvents)");
+	if (m_coop_last_event_count) Msg("[coop] OnFrame: A (post-SpawnEvents)");
 
 	if (m_bNeed_CrPr)
 		make_NetCorrectionPrediction();
@@ -1071,10 +1071,10 @@ void CLevel::OnFrame()
 			GameTaskManager().UpdateTasks();
 		}
 	}
-	if (m_coop_last_event_batch) Msg("[coop] OnFrame: B (post-MapManager/GameTaskMgr)");
+	if (m_coop_last_event_count) Msg("[coop] OnFrame: B (post-MapManager/GameTaskMgr)");
 	// Inherited update
 	inherited::OnFrame();
-	if (m_coop_last_event_batch) Msg("[coop] OnFrame: C (post-inherited::OnFrame)");
+	if (m_coop_last_event_count) Msg("[coop] OnFrame: C (post-inherited::OnFrame)");
 	// Draw client/server stats
 	if (!g_dedicated_server && psDeviceFlags.test(rsStatistic))
 	{
@@ -1166,7 +1166,7 @@ void CLevel::OnFrame()
 		ai().script_engine().script_process(ScriptEngine::eScriptProcessorLevel)->update();
 	m_ph_commander->update();
 	m_ph_commander_scripts->update();
-	if (m_coop_last_event_batch) Msg("[coop] OnFrame: D (post-script/ph_commander)");
+	if (m_coop_last_event_count) Msg("[coop] OnFrame: D (post-script/ph_commander)");
 	Device.Statistic->TEST0.Begin();
 	BulletManager().CommitRenderSet();
 	Device.Statistic->TEST0.End();
@@ -1190,7 +1190,7 @@ void CLevel::OnFrame()
 		else
 			script_gc();
 	}
-	if (m_coop_last_event_batch) Msg("[coop] OnFrame: E (post-BulletMgr/sounds/GC)");
+	if (m_coop_last_event_count) Msg("[coop] OnFrame: E (post-BulletMgr/sounds/GC)");
 	if (pStatGraphR)
 	{
 		static float fRPC_Mult = 10.0f;
@@ -1201,7 +1201,7 @@ void CLevel::OnFrame()
 
 	for (auto& pair : m_script_attachments)
 		pair.second->Update();
-	m_coop_last_event_batch = 0;
+	m_coop_last_event_count = 0;
 }
 
 int psLUA_GCSTEP = 300;
