@@ -509,6 +509,7 @@ function ActorMenu_on_item_focus_receive(obj) -- highlight compatible items
 end
 
 function save_state(m_data) --// NOTE: bolts aren't saved in alife, so this is a temp solution
+	if not db.actor then return end
 	local bolts = {}
 	local function itr(obj)
 		local sec = obj:section()
