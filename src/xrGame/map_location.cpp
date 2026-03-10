@@ -813,16 +813,23 @@ bool CRelationMapLocation::Update()
 			{
 				const CGameObject* pObj = smart_cast<const CGameObject*>(_object_);
 				CActor* pAct = smart_cast<CActor*>(Level().Objects.net_Find(m_pInvOwnerActorID));
-				CHelmet* helm = smart_cast<CHelmet*>(pAct->inventory().ItemFromSlot(HELMET_SLOT));
-				if (helm && helm->m_fShowNearestEnemiesDistance)
+				if (!pAct || !Actor())
 				{
-					if (pAct->Position().distance_to(pObj->Position()) < helm->m_fShowNearestEnemiesDistance)
-						vis_res = true;
+					vis_res = false;
+				}
+				else
+				{
+					CHelmet* helm = smart_cast<CHelmet*>(pAct->inventory().ItemFromSlot(HELMET_SLOT));
+					if (helm && helm->m_fShowNearestEnemiesDistance)
+					{
+						if (pAct->Position().distance_to(pObj->Position()) < helm->m_fShowNearestEnemiesDistance)
+							vis_res = true;
+						else
+							vis_res = Actor()->memory().visual().visible_now(pObj);
+					}
 					else
 						vis_res = Actor()->memory().visual().visible_now(pObj);
 				}
-				else
-					vis_res = Actor()->memory().visual().visible_now(pObj);
 			}
 		}
 		else
@@ -836,8 +843,9 @@ bool CRelationMapLocation::Update()
 		{
 			const CGameObject* pObj = smart_cast<const CGameObject*>(_object_);
 			CActor* pAct = smart_cast<CActor*>(Level().Objects.net_Find(m_pInvOwnerActorID));
-			if (/*pAct->Position().distance_to_sqr(pObj->Position()) < 100.0F && */abs(
-				pObj->Position().y - pAct->Position().y) < 3.0f)
+			if (!pAct || !pObj)
+				vis_res = false;
+			else if (abs(pObj->Position().y - pAct->Position().y) < 3.0f)
 				vis_res = true;
 			else
 				vis_res = false;

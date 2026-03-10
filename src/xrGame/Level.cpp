@@ -1340,7 +1340,8 @@ void CLevel::OnRender()
 
 	if (m_coop_render_event_count) Msg("[coop] OnRender: L (pre-ScriptDebugRender)");
 	ScriptDebugRender();
-	if (m_coop_render_event_count) Msg("[coop] OnRender: M (done)");
+	if (m_coop_render_event_count) Msg("[coop] OnRender: M (pre-debug_renderer)");
+	u32 _coop_rcnt = m_coop_render_event_count;
 	m_coop_render_event_count = 0;
 
 #ifdef DEBUG
@@ -1416,6 +1417,7 @@ void CLevel::OnRender()
     }
 #endif
 	debug_renderer().render();
+	if (_coop_rcnt) Msg("[coop] OnRender: N (done)");
 #ifdef DEBUG
     if (bDebug)
     {
