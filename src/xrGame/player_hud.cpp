@@ -878,10 +878,10 @@ void player_hud::load(const shared_str& player_hud_sect, bool force)
 	}
 	else
 	{
-		if (m_attached_items[1])
+		if (m_attached_items[1] && m_attached_items[1]->m_parent_hud_item)
 			m_attached_items[1]->m_parent_hud_item->on_outfit_changed();
 
-		if (m_attached_items[0])
+		if (m_attached_items[0] && m_attached_items[0]->m_parent_hud_item)
 			m_attached_items[0]->m_parent_hud_item->on_outfit_changed();
 	}
 
@@ -1142,12 +1142,13 @@ void player_hud::update(const Fmatrix& cam_trans)
 
 	Fmatrix trans_2 = trans;
 
-	if (m_attached_items[0])
+	if (m_attached_items[0] && m_attached_items[0]->m_parent_hud_item)
 		m_attached_items[0]->m_parent_hud_item->UpdateHudAdditional(trans);
 
 	if (m_attached_items[1])
 	{
-		m_attached_items[1]->m_parent_hud_item->UpdateHudAdditional(trans_2);
+		if (m_attached_items[1]->m_parent_hud_item)
+			m_attached_items[1]->m_parent_hud_item->UpdateHudAdditional(trans_2);
 		if (wep && wep->IsZoomed())
 			trans_2.mulB_43(wep->m_shoot_shake_mat);
 	}
@@ -1359,27 +1360,18 @@ void player_hud::update(const Fmatrix& cam_trans)
 void player_hud::updateMovementLayerState()
 {
 	CActor* pActor = Actor();
-	Msg("[coop] player_hud::updateMovementLayerState pActor=%s g_actor=%s items[0]=%s items[1]=%s",
-		pActor ? "valid" : "NULL", g_actor ? "valid" : "NULL",
-		m_attached_items[0] ? "valid" : "NULL",
-		m_attached_items[1] ? "valid" : "NULL");
 
 	if (!pActor)
 		return;
 
-	Msg("[coop] updateMovementLayerState: stopping %u movement layers", (u32)m_movement_layers.size());
 	for (movement_layer* anm : m_movement_layers)
 	{
 		anm->Stop(false);
 	}
 
-	Msg("[coop] updateMovementLayerState: computing need_blend (script_anim_part=%u)", (u32)script_anim_part);
 	bool nb0 = m_attached_items[0] && m_attached_items[0]->m_parent_hud_item && m_attached_items[0]->m_parent_hud_item->NeedBlendAnm();
-	Msg("[coop] updateMovementLayerState: nb0=%d", (int)nb0);
 	bool nb1 = m_attached_items[1] && m_attached_items[1]->m_parent_hud_item && m_attached_items[1]->m_parent_hud_item->NeedBlendAnm();
-	Msg("[coop] updateMovementLayerState: nb1=%d", (int)nb1);
 	bool need_blend = (script_anim_part != u8(-1) || nb0 || nb1);
-	Msg("[coop] updateMovementLayerState: need_blend=%d", (int)need_blend);
 
 	if (need_blend)
 	{
@@ -1388,24 +1380,17 @@ void player_hud::updateMovementLayerState()
 		if (m_attached_items[0] && m_attached_items[0]->m_parent_hud_item && m_attached_items[0]->m_parent_hud_item->has_object() && m_attached_items[0]->m_parent_hud_item->object().cast_weapon())
 			wep = m_attached_items[0]->m_parent_hud_item->object().cast_weapon();
 
-		Msg("[coop] updateMovementLayerState: wep=%s", wep ? "valid" : "NULL");
-
 		if (wep && wep->IsZoomed()) {
-			Msg("[coop] updateMovementLayerState: Play eAimIdle");
 			m_movement_layers[eAimIdle]->Play();
 		}
 		else {
-			Msg("[coop] updateMovementLayerState: Play eIdle");
 			m_movement_layers[eIdle]->Play();
 		}
 
-		Msg("[coop] updateMovementLayerState: checking AnyMove");
 		if (pActor->AnyMove())
 		{
 			CEntity::SEntityState state;
-			Msg("[coop] updateMovementLayerState: calling g_State");
 			pActor->g_State(state);
-			Msg("[coop] updateMovementLayerState: g_State done bCrouch=%d bSprint=%d", (int)state.bCrouch, (int)state.bSprint);
 
 			if (wep && wep->IsZoomed()) {
 				state.bCrouch ? m_movement_layers[eAimCrouch]->Play() : m_movement_layers[eAimWalk]->Play();
@@ -1424,7 +1409,6 @@ void player_hud::updateMovementLayerState()
 			}
 		}
 	}
-	Msg("[coop] updateMovementLayerState: done");
 }
 
 void player_hud::PlayBlendAnm(LPCSTR name, u8 part, float speed, float power, bool bLooped, bool no_restart, LPCSTR pivot_bone)
@@ -1715,12 +1699,12 @@ void player_hud::attach_item(CHudItem* item)
 
 	if (m_attached_items[item_idx] != pi)
 	{
-		if (m_attached_items[item_idx])
+		if (m_attached_items[item_idx] && m_attached_items[item_idx]->m_parent_hud_item)
 			m_attached_items[item_idx]->m_parent_hud_item->on_b_hud_detach();
 
 		m_attached_items[item_idx] = pi;
 
-		if (item_idx == 0 && m_attached_items[1])
+		if (item_idx == 0 && m_attached_items[1] && m_attached_items[1]->m_parent_hud_item)
 			m_attached_items[1]->m_parent_hud_item->CheckCompatibility(item);
 
 		item->on_a_hud_attach();
@@ -1807,7 +1791,8 @@ void player_hud::detach_item_idx(u16 idx)
 {
 	if (NULL == m_attached_items[idx]) return;
 
-	m_attached_items[idx]->m_parent_hud_item->on_b_hud_detach();
+	if (m_attached_items[idx]->m_parent_hud_item)
+		m_attached_items[idx]->m_parent_hud_item->on_b_hud_detach();
 	m_attached_items[idx] = NULL;
 
 	if (idx == 1)
@@ -1855,9 +1840,11 @@ void player_hud::detach_item(CHudItem* item)
 
 bool player_hud::allow_script_anim()
 {
-	if (m_attached_items[0] && (m_attached_items[0]->m_parent_hud_item->IsPending() || m_attached_items[0]->m_parent_hud_item->GetState() == CHudItem::EHudStates::eBore))
+	if (m_attached_items[0] && m_attached_items[0]->m_parent_hud_item &&
+		(m_attached_items[0]->m_parent_hud_item->IsPending() || m_attached_items[0]->m_parent_hud_item->GetState() == CHudItem::EHudStates::eBore))
 		return false;
-	else if (m_attached_items[1] && (m_attached_items[1]->m_parent_hud_item->IsPending() || m_attached_items[1]->m_parent_hud_item->GetState() == CHudItem::EHudStates::eBore))
+	else if (m_attached_items[1] && m_attached_items[1]->m_parent_hud_item &&
+		(m_attached_items[1]->m_parent_hud_item->IsPending() || m_attached_items[1]->m_parent_hud_item->GetState() == CHudItem::EHudStates::eBore))
 		return false;
 	else if (script_anim_part != u8(-1))
 		return false;
@@ -1876,7 +1863,7 @@ void player_hud::calc_transform(u16 attach_slot_idx, const Fmatrix& offset, Fmat
 bool player_hud::inertion_allowed()
 {
 	attachable_hud_item* hi = m_attached_items[0];
-	if (hi)
+	if (hi && hi->m_parent_hud_item)
 	{
 		bool res = (hi->m_parent_hud_item->HudInertionEnabled() && hi->m_parent_hud_item->HudInertionAllowed());
 		return res;
@@ -1888,17 +1875,17 @@ void player_hud::OnMovementChanged(ACTOR_DEFS::EMoveCommand cmd)
 {
 	if (cmd == 0)
 	{
-		if (m_attached_items[0])
+		if (m_attached_items[0] && m_attached_items[0]->m_parent_hud_item)
 		{
 			if (m_attached_items[0]->m_parent_hud_item->GetState() == CHUDState::eIdle)
 				m_attached_items[0]->m_parent_hud_item->PlayAnimIdle();
 		}
-		if (m_attached_items[1])
+		if (m_attached_items[1] && m_attached_items[1]->m_parent_hud_item)
 		{
 			if (m_attached_items[1]->m_parent_hud_item->GetState() == CHUDState::eIdle)
 				m_attached_items[1]->m_parent_hud_item->PlayAnimIdle();
 		}
-		if (m_attached_items[SCOPE_ATTACH_IDX])
+		if (m_attached_items[SCOPE_ATTACH_IDX] && m_attached_items[SCOPE_ATTACH_IDX]->m_parent_hud_item)
 		{
 			if (m_attached_items[SCOPE_ATTACH_IDX]->m_parent_hud_item->GetState() == CHUDState::eIdle)
 				m_attached_items[SCOPE_ATTACH_IDX]->m_parent_hud_item->PlayAnimIdle();
@@ -2049,12 +2036,28 @@ void player_hud::OnFrame()
 
 void player_hud::net_Relcase(CObject* obj)
 {
-	if (m_attached_items[0])
+	if (m_attached_items[0] && m_attached_items[0]->m_parent_hud_item)
 		m_attached_items[0]->m_parent_hud_item->net_Relcase(obj);
 
-	if (m_attached_items[1])
+	if (m_attached_items[1] && m_attached_items[1]->m_parent_hud_item)
 		m_attached_items[1]->m_parent_hud_item->net_Relcase(obj);
 
-	if (m_attached_items[SCOPE_ATTACH_IDX])
+	if (m_attached_items[SCOPE_ATTACH_IDX] && m_attached_items[SCOPE_ATTACH_IDX]->m_parent_hud_item)
 		m_attached_items[SCOPE_ATTACH_IDX]->m_parent_hud_item->net_Relcase(obj);
+}
+
+void player_hud::clear_stale_attached_item(attachable_hud_item* pi)
+{
+	// Called by CHudItem::DeleteHudItemData() to prevent use-after-free.
+	// Nulls out any slot that still holds a pointer to the item being freed.
+	// An item occupies at most one slot, so we break after the first match.
+	for (u16 i = 0; i <= SCOPE_ATTACH_IDX; i++)
+	{
+		if (m_attached_items[i] == pi)
+		{
+			m_attached_items[i] = NULL;
+			Msg("[coop] player_hud::clear_stale_attached_item: cleared slot %u (item freed while still attached)", (u32)i);
+			break;
+		}
+	}
 }

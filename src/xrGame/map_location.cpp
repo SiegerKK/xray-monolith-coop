@@ -358,12 +358,12 @@ void CMapLocation::UpdateSpot(CUICustomMap* map, CMapSpot* sp)
 	{
 		bool b_alife = !!ai().get_alife();
 
-		if (b_alife && m_flags.test(eHideInOffline) && !m_owner_se_object->m_bOnline)
+		if (b_alife && m_owner_se_object && m_flags.test(eHideInOffline) && !m_owner_se_object->m_bOnline)
 		{
 			return;
 		}
 
-		if (b_alife && m_owner_se_object->m_flags.test(CSE_ALifeObject::flVisibleForMap) == FALSE)
+		if (b_alife && m_owner_se_object && m_owner_se_object->m_flags.test(CSE_ALifeObject::flVisibleForMap) == FALSE)
 		{
 			return;
 		}
@@ -437,6 +437,12 @@ void CMapLocation::UpdateSpot(CUICustomMap* map, CMapSpot* sp)
 	}
 	else if (Level().name() == map->MapName() && GetSpotPointer(sp))
 	{
+		if (!m_owner_se_object || !Actor())
+		{
+			Msg("[coop] WARNING: CMapLocation::UpdateSpot: skipping cross-map pointer for obj=%u (se_obj=%s actor=%s)", m_objectID, m_owner_se_object ? "ok" : "NULL", Actor() ? "ok" : "NULL");
+			return;
+		}
+
 		GameGraph::_GRAPH_ID dest_graph_id;
 
 		dest_graph_id = m_owner_se_object->m_tGraphID;
@@ -813,16 +819,23 @@ bool CRelationMapLocation::Update()
 			{
 				const CGameObject* pObj = smart_cast<const CGameObject*>(_object_);
 				CActor* pAct = smart_cast<CActor*>(Level().Objects.net_Find(m_pInvOwnerActorID));
-				CHelmet* helm = smart_cast<CHelmet*>(pAct->inventory().ItemFromSlot(HELMET_SLOT));
-				if (helm && helm->m_fShowNearestEnemiesDistance)
+				if (!pAct || !Actor() || !pObj)
 				{
-					if (pAct->Position().distance_to(pObj->Position()) < helm->m_fShowNearestEnemiesDistance)
-						vis_res = true;
+					vis_res = false;
+				}
+				else
+				{
+					CHelmet* helm = smart_cast<CHelmet*>(pAct->inventory().ItemFromSlot(HELMET_SLOT));
+					if (helm && helm->m_fShowNearestEnemiesDistance)
+					{
+						if (pAct->Position().distance_to(pObj->Position()) < helm->m_fShowNearestEnemiesDistance)
+							vis_res = true;
+						else
+							vis_res = Actor()->memory().visual().visible_now(pObj);
+					}
 					else
 						vis_res = Actor()->memory().visual().visible_now(pObj);
 				}
-				else
-					vis_res = Actor()->memory().visual().visible_now(pObj);
 			}
 		}
 		else
@@ -836,8 +849,9 @@ bool CRelationMapLocation::Update()
 		{
 			const CGameObject* pObj = smart_cast<const CGameObject*>(_object_);
 			CActor* pAct = smart_cast<CActor*>(Level().Objects.net_Find(m_pInvOwnerActorID));
-			if (/*pAct->Position().distance_to_sqr(pObj->Position()) < 100.0F && */abs(
-				pObj->Position().y - pAct->Position().y) < 3.0f)
+			if (!pAct || !pObj)
+				vis_res = false;
+			else if (abs(pObj->Position().y - pAct->Position().y) < 3.0f)
 				vis_res = true;
 			else
 				vis_res = false;
@@ -847,7 +861,12 @@ bool CRelationMapLocation::Update()
 	}
 
 	if (m_b_visible == false && vis_res == true)
-		m_minimap_spot->ResetXformAnimation();
+	{
+		if (m_minimap_spot)
+			m_minimap_spot->ResetXformAnimation();
+		else
+			Msg("[coop] WARNING: CRelationMapLocation::Update: m_minimap_spot NULL for obj=%u spot=%s (check map_spots.xml mini_map section)", m_objectID, *m_curr_spot_name);
+	}
 
 	m_b_visible = vis_res;
 

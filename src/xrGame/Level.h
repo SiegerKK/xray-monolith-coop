@@ -126,6 +126,8 @@ private:
 	bool m_bNeed_CrPr = false;
 	u32 m_dwNumSteps = 0;
 	bool m_bIn_CrPr = false;
+	u32 m_coop_last_event_count = 0;
+	u32 m_coop_render_event_count = 0;
 	xr_vector<CGameObject*> pObjects4CrPr;
 	xr_vector<CGameObject*> pActors4CrPr;
 	CObject* pCurrentControlEntity = nullptr;

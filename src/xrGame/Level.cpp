@@ -879,6 +879,8 @@ void CLevel::ProcessGameEvents()
 					if (IsGameTypeSingleOrCoop())
 						Msg("[coop] ProcessGameEvents M_EVENT: event_type=%u destination_id=%u", type, dest);
 					cl_Process_Event(dest, type, P);
+					if (IsGameTypeSingleOrCoop())
+						Msg("[coop] ProcessGameEvents M_EVENT: cl_Process_Event returned type=%u dest=%u", type, dest);
 					break;
 				}
 			case M_MOVE_PLAYERS:
@@ -941,7 +943,13 @@ void CLevel::ProcessGameEvents()
 	}
 #endif
 
-	if (OnServer() && GameID() != eGameIDSingle)
+	if (IsGameTypeSingleOrCoop() && !events_to_process.empty())
+	{
+		m_coop_last_event_count = (u32)events_to_process.size();
+		Msg("[coop] ProcessGameEvents: done, processed %u events", m_coop_last_event_count);
+	}
+
+	if (OnServer() && !IsGameTypeSingleOrCoop())
 		Game().m_WeaponUsageStatistic->Send_Check_Respond();
 }
 
@@ -1041,16 +1049,21 @@ void CLevel::OnFrame()
 		}
 	}
 #endif
+	if (m_coop_last_event_count) Msg("[coop] OnFrame: A (post-SpawnEvents)");
 
 	if (m_bNeed_CrPr)
 		make_NetCorrectionPrediction();
 	if (!g_dedicated_server)
 	{
-		if (g_mt_config.test(mtMap))
+		// In coop, CRelationMapLocation::Update() (inside MapManager::Update) calls LoadSpot()
+		// which mutates CMapSpot UI objects in the MT seqParallel thread while the main thread
+		// renders those same objects — a data race that crashes at runtime.  Force synchronous
+		// execution on the main thread in coop to eliminate the race.
+		if (g_mt_config.test(mtMap) && IsGameTypeSingle())
 			Device.seqParallel.push_back(fastdelegate::FastDelegate0<>(m_map_manager, &CMapManager::Update));
 		else
 			MapManager().Update();
-		if (IsGameTypeSingle() && Device.dwPrecacheFrame == 0)
+		if (IsGameTypeSingleOrCoop() && Device.dwPrecacheFrame == 0)
 		{
 			// XXX nitrocaster: was enabled in x-ray 1.5; to be restored or removed
 			//if (g_mt_config.test(mtMap))
@@ -1062,8 +1075,10 @@ void CLevel::OnFrame()
 			GameTaskManager().UpdateTasks();
 		}
 	}
+	if (m_coop_last_event_count) Msg("[coop] OnFrame: B (post-MapManager/GameTaskMgr)");
 	// Inherited update
 	inherited::OnFrame();
+	if (m_coop_last_event_count) Msg("[coop] OnFrame: C (post-inherited::OnFrame)");
 	// Draw client/server stats
 	if (!g_dedicated_server && psDeviceFlags.test(rsStatistic))
 	{
@@ -1155,6 +1170,7 @@ void CLevel::OnFrame()
 		ai().script_engine().script_process(ScriptEngine::eScriptProcessorLevel)->update();
 	m_ph_commander->update();
 	m_ph_commander_scripts->update();
+	if (m_coop_last_event_count) Msg("[coop] OnFrame: D (post-script/ph_commander)");
 	Device.Statistic->TEST0.Begin();
 	BulletManager().CommitRenderSet();
 	Device.Statistic->TEST0.End();
@@ -1171,13 +1187,17 @@ void CLevel::OnFrame()
 	}
 
 	// defer LUA-GC-STEP
+	// In coop, running lua_gc() in the MT seqParallel thread while the main thread executes Lua
+	// (in HUD::RenderUI and ScriptDebugRender during OnRender) is a Lua 5.1 thread-safety
+	// violation that reliably crashes.  Force synchronous execution on the main thread in coop.
 	if (!g_dedicated_server)
 	{
-		if (g_mt_config.test(mtLUA_GC))
+		if (g_mt_config.test(mtLUA_GC) && IsGameTypeSingle())
 			Device.seqParallel.push_back(fastdelegate::FastDelegate0<>(this, &CLevel::script_gc));
 		else
 			script_gc();
 	}
+	if (m_coop_last_event_count) Msg("[coop] OnFrame: E (post-BulletMgr/sounds/GC)");
 	if (pStatGraphR)
 	{
 		static float fRPC_Mult = 10.0f;
@@ -1186,8 +1206,12 @@ void CLevel::OnFrame()
 		pStatGraphR->AppendItem(float(m_dwRPS) * fRPS_Mult, 0xff00ff00, 0);
 	}
 
+	if (m_coop_last_event_count) Msg("[coop] OnFrame: F (pre-script_attachments, n=%u)", (u32)m_script_attachments.size());
 	for (auto& pair : m_script_attachments)
 		pair.second->Update();
+	if (m_coop_last_event_count) Msg("[coop] OnFrame: G (post-script_attachments)");
+	m_coop_render_event_count = m_coop_last_event_count;
+	m_coop_last_event_count = 0;
 }
 
 int psLUA_GCSTEP = 300;
@@ -1197,7 +1221,10 @@ extern BOOL psLua_ParallelGC_debug;
 
 void CLevel::script_gc()
 {
-	if (!(psLua_ParallelGC && Device.LuaGC))
+	// In coop, CLevel::LuaGC() (the primary parallel path called from the device MT
+	// thread) is a no-op to prevent a Lua 5.1 thread-safety crash.  Run GC
+	// synchronously on the main thread here instead so coop still collects garbage.
+	if (!IsGameTypeSingle() || !(psLua_ParallelGC && Device.LuaGC))
 	{	
 		PROF_EVENT();	
 		lua_gc(ai().script_engine().lua(), LUA_GCSTEP, psLUA_GCSTEP);
@@ -1214,9 +1241,17 @@ bool CLevel::Load(u32 dwNum)
     return true;
 }
 
-// demonized: called from Device, via Device.LuaGC pointer
+// demonized: called from Device, via Device.LuaGC pointer — runs on MT secondary thread
 int CLevel::LuaGC()
 {
+	// In coop, this is invoked from the device MT thread while the main thread
+	// concurrently executes Lua scripts during rendering (HUD::RenderUI,
+	// ScriptDebugRender).  Lua 5.1 is not thread-safe; calling lua_gc() here
+	// causes a reliable crash.  Return 0 so the MT loop does no GC work and
+	// continues until it hits psLua_ParallelGC_CallAmount or isRendering goes
+	// false.  GC is handled synchronously on the main thread by script_gc() instead.
+	if (!IsGameTypeSingle())
+		return 0;
     return lua_gc(ai().script_engine().lua(), LUA_GCSTEP, psLua_ParallelGCStep);
 }
 void CLevel::LuaGCDebug()
@@ -1242,6 +1277,7 @@ extern int ps_r4_hdr10_pda; // NOTE: this is a hack to avoid double HDR tonemapp
 
 void CLevel::OnRender()
 {
+	if (m_coop_render_event_count) Msg("[coop] OnRender: H (pre-PDA)");
 	// PDA
 	if (game && CurrentGameUI() && &CurrentGameUI()->GetPdaMenu() != nullptr)
 	{
@@ -1300,9 +1336,14 @@ void CLevel::OnRender()
 		}
 	}
 
+	if (m_coop_render_event_count) Msg("[coop] OnRender: I (pre-inherited::OnRender)");
 	inherited::OnRender();
 	if (!game)
+	{
+		m_coop_render_event_count = 0;
 		return;
+	}
+	if (m_coop_render_event_count) Msg("[coop] OnRender: J (post-inherited::OnRender)");
 	Game().OnRender();
 	BulletManager().Render();
 
@@ -1312,9 +1353,14 @@ void CLevel::OnRender()
 	if (use_reshade)
 		render_reshade_effects();
 
+	if (m_coop_render_event_count) Msg("[coop] OnRender: K (pre-HUD::RenderUI)");
 	HUD().RenderUI();
 
+	if (m_coop_render_event_count) Msg("[coop] OnRender: L (pre-ScriptDebugRender)");
 	ScriptDebugRender();
+	if (m_coop_render_event_count) Msg("[coop] OnRender: M (pre-debug_renderer)");
+	u32 _coop_rcnt = m_coop_render_event_count;
+	m_coop_render_event_count = 0;
 
 #ifdef DEBUG
     draw_wnds_rects();
@@ -1389,6 +1435,7 @@ void CLevel::OnRender()
     }
 #endif
 	debug_renderer().render();
+	if (_coop_rcnt) Msg("[coop] OnRender: N (done)");
 #ifdef DEBUG
     if (bDebug)
     {

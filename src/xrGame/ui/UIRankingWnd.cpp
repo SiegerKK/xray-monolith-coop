@@ -59,13 +59,19 @@ void CUIRankingWnd::Show(bool status)
 {
 	if (status)
 	{
-		update_info();
+		if (g_actor)
+			update_info();
 	}
 	inherited::Show(status);
 }
 
 void CUIRankingWnd::Update()
 {
+	// Guard against coop state where the actor C++ object exists but the Lua
+	// actor binder (db.actor) may not have run net_spawn() yet.
+	if (!g_actor)
+		return;
+
 	if (Device.dwTimeGlobal - m_previous_time > m_delay)
 	{
 		m_previous_time = Device.dwTimeGlobal;

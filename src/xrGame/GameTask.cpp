@@ -136,7 +136,9 @@ void CGameTask::ChangeMapLocation(LPCSTR new_map_location, u16 new_map_object_id
 
 void CGameTask::ChangeStateCallback()
 {
-	Actor()->callback(GameObject::eTaskStateChange)(this, GetTaskState());
+	CActor* pActor = Actor();
+	if (!pActor) return;
+	pActor->callback(GameObject::eTaskStateChange)(this, GetTaskState());
 }
 
 ETaskState CGameTask::UpdateState()
@@ -171,11 +173,13 @@ ETaskState CGameTask::UpdateState()
 
 bool CGameTask::CheckInfo(const xr_vector<shared_str>& v) const
 {
+	CActor* pActor = Actor();
+	if (!pActor) return false;
 	bool res = false;
 	xr_vector<shared_str>::const_iterator it = v.begin();
 	for (; it != v.end(); ++it)
 	{
-		res = Actor()->HasInfo(*it);
+		res = pActor->HasInfo(*it);
 		if (!res) break;
 	}
 	return res;
@@ -204,9 +208,11 @@ void CGameTask::CallAllFuncs(const task_state_functors& v)
 
 void CGameTask::SendInfo(const xr_vector<shared_str>& v)
 {
+	CActor* pActor = Actor();
+	if (!pActor) return;
 	xr_vector<shared_str>::const_iterator it = v.begin();
 	for (; it != v.end(); ++it)
-		Actor()->TransferInfo((*it), true);
+		pActor->TransferInfo((*it), true);
 }
 
 void CGameTask::save_task(IWriter& stream)

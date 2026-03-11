@@ -56,6 +56,7 @@ BOOL CLevelChanger::net_Spawn(CSE_Abstract* DC)
 
 	CSE_Abstract* l_tpAbstract = (CSE_Abstract*)(DC);
 	CSE_ALifeLevelChanger* l_tpALifeLevelChanger = smart_cast<CSE_ALifeLevelChanger*>(l_tpAbstract);
+	Msg("[coop] CLevelChanger::net_Spawn: cast l_tpALifeLevelChanger=%s", l_tpALifeLevelChanger ? "valid" : "NULL");
 	R_ASSERT(l_tpALifeLevelChanger);
 
 	m_game_vertex_id = l_tpALifeLevelChanger->m_tNextGraphID;
@@ -64,11 +65,15 @@ BOOL CLevelChanger::net_Spawn(CSE_Abstract* DC)
 	m_angles = l_tpALifeLevelChanger->m_tAngles;
 
 	m_bSilentMode = !!l_tpALifeLevelChanger->m_bSilentMode;
+	Msg("[coop] CLevelChanger::net_Spawn: get_level_graph=%s", ai().get_level_graph() ? "valid" : "NULL");
 	if (ai().get_level_graph())
 	{
 		//. this information should be computed in xrAI
+		Msg("[coop] CLevelChanger::net_Spawn: level_vertex lookup");
 		ai_location().level_vertex(ai().level_graph().vertex(u32(-1), Position()));
+		Msg("[coop] CLevelChanger::net_Spawn: game_vertex lookup level_vertex_id=%u", ai_location().level_vertex_id());
 		ai_location().game_vertex(ai().cross_table().vertex(ai_location().level_vertex_id()).game_vertex_id());
+		Msg("[coop] CLevelChanger::net_Spawn: ai_location done");
 	}
 
 	feel_touch.clear();
@@ -91,7 +96,9 @@ BOOL CLevelChanger::net_Spawn(CSE_Abstract* DC)
 		}
 	}
 
+	Msg("[coop] CLevelChanger::net_Spawn: calling inherited::net_Spawn");
 	BOOL bOk = inherited::net_Spawn(DC);
+	Msg("[coop] CLevelChanger::net_Spawn: inherited::net_Spawn returned bOk=%d", (int)bOk);
 	if (bOk)
 	{
 		l_pShape->ComputeBounds();
@@ -100,6 +107,7 @@ BOOL CLevelChanger::net_Spawn(CSE_Abstract* DC)
 		setEnabled(TRUE);
 	}
 	g_lchangers.push_back(this);
+	Msg("[coop] CLevelChanger::net_Spawn: done bOk=%d", (int)bOk);
 	return (bOk);
 }
 

@@ -67,6 +67,12 @@ CHudItem::~CHudItem()
 
 void CHudItem::DeleteHudItemData()
 {
+	// Remove from player_hud's slots BEFORE freeing to prevent use-after-free.
+	// If the item is destroyed (e.g. net_Destroy) while still attached, the
+	// freed attachable_hud_item pointer would remain in g_player_hud->m_attached_items[],
+	// causing later dereferences to read freed memory (NULL m_parent_hud_item, etc.).
+	if (g_player_hud && m_attachable)
+		g_player_hud->clear_stale_attached_item(m_attachable);
 	xr_delete(m_attachable);
 	m_attachable = nullptr;
 }
@@ -164,8 +170,6 @@ void CHudItem::OnEvent(NET_Packet& P, u16 type)
 		{
 			u8 S;
 			P.r_u8(S);
-			Msg("[coop] CHudItem::OnEvent GE_WPN_STATE_CHANGE obj_id=%u S=%u g_player_hud=%s",
-				object().ID(), u32(S), g_player_hud ? "valid" : "NULL");
 			OnStateSwitch(u32(S), GetState());
 		}
 		break;
@@ -174,8 +178,6 @@ void CHudItem::OnEvent(NET_Packet& P, u16 type)
 
 void CHudItem::OnStateSwitch(u32 S, u32 oldState)
 {
-	Msg("[coop] CHudItem::OnStateSwitch obj_id=%u S=%u oldState=%u g_player_hud=%s",
-		object().ID(), S, oldState, g_player_hud ? "valid" : "NULL");
 	m_lastState = oldState;
 	SetState(S);
 
@@ -205,13 +207,24 @@ void CHudItem::OnStateSwitch(u32 S, u32 oldState)
 		break;
 	}
 
-	g_player_hud->updateMovementLayerState();
+	if (g_player_hud)
+		g_player_hud->updateMovementLayerState();
 
-	::luabind::functor<void> funct;
-	if (ai().script_engine().functor("_G.CHudItem__OnStateSwitch", funct))
+	// Scope funct so its destructor runs BEFORE exit. If funct were destroyed
+	// after re-entrant Lua code, the Lua reference can be invalidated by GC,
+	// crashing lua_unref in the destructor.
 	{
-		funct(smart_cast<CGameObject*>(this)->lua_game_object(), S, oldState);
-	}
+		::luabind::functor<void> funct;
+		if (ai().script_engine().functor("_G.CHudItem__OnStateSwitch", funct))
+		{
+			// Use object().lua_game_object() directly instead of a cross-cast from
+			// CHudItem* to CGameObject*. object() already holds the CPhysicItem* (which
+			// is-a CGameObject) stored at _construct() time, so no dynamic_cast is needed.
+			CScriptGameObject* sgo = object().lua_game_object();
+			if (sgo)
+				funct(sgo, S, oldState);
+		}
+	} // luabind::functor<void> destructor runs here
 }
 
 void CHudItem::OnAnimationEnd(u32 state)
