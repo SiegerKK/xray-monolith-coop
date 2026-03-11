@@ -1055,7 +1055,11 @@ void CLevel::OnFrame()
 		make_NetCorrectionPrediction();
 	if (!g_dedicated_server)
 	{
-		if (g_mt_config.test(mtMap))
+		// In coop, CRelationMapLocation::Update() (inside MapManager::Update) calls LoadSpot()
+		// which mutates CMapSpot UI objects in the MT seqParallel thread while the main thread
+		// renders those same objects — a data race that crashes at runtime.  Force synchronous
+		// execution on the main thread in coop to eliminate the race.
+		if (g_mt_config.test(mtMap) && IsGameTypeSingle())
 			Device.seqParallel.push_back(fastdelegate::FastDelegate0<>(m_map_manager, &CMapManager::Update));
 		else
 			MapManager().Update();
