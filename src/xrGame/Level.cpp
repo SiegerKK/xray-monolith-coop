@@ -1221,7 +1221,10 @@ extern BOOL psLua_ParallelGC_debug;
 
 void CLevel::script_gc()
 {
-	if (!(psLua_ParallelGC && Device.LuaGC))
+	// In coop, CLevel::LuaGC() (the primary parallel path called from the device MT
+	// thread) is a no-op to prevent a Lua 5.1 thread-safety crash.  Run GC
+	// synchronously on the main thread here instead so coop still collects garbage.
+	if (!IsGameTypeSingle() || !(psLua_ParallelGC && Device.LuaGC))
 	{	
 		PROF_EVENT();	
 		lua_gc(ai().script_engine().lua(), LUA_GCSTEP, psLUA_GCSTEP);
@@ -1238,9 +1241,17 @@ bool CLevel::Load(u32 dwNum)
     return true;
 }
 
-// demonized: called from Device, via Device.LuaGC pointer
+// demonized: called from Device, via Device.LuaGC pointer — runs on MT secondary thread
 int CLevel::LuaGC()
 {
+	// In coop, this is invoked from the device MT thread while the main thread
+	// concurrently executes Lua scripts during rendering (HUD::RenderUI,
+	// ScriptDebugRender).  Lua 5.1 is not thread-safe; calling lua_gc() here
+	// causes a reliable crash.  Return 0 so the MT loop does no GC work and
+	// continues until it hits psLua_ParallelGC_CallAmount or isRendering goes
+	// false.  GC is handled synchronously on the main thread by script_gc() instead.
+	if (!IsGameTypeSingle())
+		return 0;
     return lua_gc(ai().script_engine().lua(), LUA_GCSTEP, psLua_ParallelGCStep);
 }
 void CLevel::LuaGCDebug()
