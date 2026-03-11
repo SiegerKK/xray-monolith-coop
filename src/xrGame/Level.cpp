@@ -1187,9 +1187,12 @@ void CLevel::OnFrame()
 	}
 
 	// defer LUA-GC-STEP
+	// In coop, running lua_gc() in the MT seqParallel thread while the main thread executes Lua
+	// (in HUD::RenderUI and ScriptDebugRender during OnRender) is a Lua 5.1 thread-safety
+	// violation that reliably crashes.  Force synchronous execution on the main thread in coop.
 	if (!g_dedicated_server)
 	{
-		if (g_mt_config.test(mtLUA_GC))
+		if (g_mt_config.test(mtLUA_GC) && IsGameTypeSingle())
 			Device.seqParallel.push_back(fastdelegate::FastDelegate0<>(this, &CLevel::script_gc));
 		else
 			script_gc();
