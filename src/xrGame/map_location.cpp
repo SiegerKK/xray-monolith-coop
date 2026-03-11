@@ -813,7 +813,7 @@ bool CRelationMapLocation::Update()
 			{
 				const CGameObject* pObj = smart_cast<const CGameObject*>(_object_);
 				CActor* pAct = smart_cast<CActor*>(Level().Objects.net_Find(m_pInvOwnerActorID));
-				if (!pAct || !Actor())
+				if (!pAct || !Actor() || !pObj)
 				{
 					vis_res = false;
 				}
@@ -855,7 +855,12 @@ bool CRelationMapLocation::Update()
 	}
 
 	if (m_b_visible == false && vis_res == true)
-		m_minimap_spot->ResetXformAnimation();
+	{
+		if (m_minimap_spot)
+			m_minimap_spot->ResetXformAnimation();
+		else
+			Msg("[coop] WARNING: CRelationMapLocation::Update: m_minimap_spot NULL for obj=%u spot=%s (check map_spots.xml mini_map section)", m_objectID, *m_curr_spot_name);
+	}
 
 	m_b_visible = vis_res;
 
